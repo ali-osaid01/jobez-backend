@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

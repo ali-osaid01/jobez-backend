@@ -1,0 +1,32 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://jobez:jobez_secret@db:5432/jobez
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: jobez
+      POSTGRES_PASSWORD: jobez_secret
+      POSTGRES_DB: jobez
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobez"]
+      interval: 5s
+      retries: 5
+
+volumes:
+  pgdata:
