@@ -47,15 +47,20 @@ class JobService:
             raise NotFoundException("Job")
         return job
 
+    async def get_employer_company_name(self, db: AsyncSession, employer_id: uuid.UUID) -> str:
+        stmt = select(Profile.company).where(Profile.user_id == employer_id).limit(1)
+        return (await db.execute(stmt)).scalar_one_or_none() or ""
+
     async def get_by_id(self, db: AsyncSession, job_id: uuid.UUID) -> tuple[Job, str]:
         """Returns (Job, company_name) by joining employer Profile."""
         stmt = (
             select(Job, Profile.company)
             .join(Profile, Profile.user_id == Job.employer_id)
             .where(Job.id == job_id)
+            .limit(1)
         )
         result = await db.execute(stmt)
-        row = result.one_or_none()
+        row = result.first()
         if not row:
             raise NotFoundException("Job")
         return row  # (Job, company_str)
@@ -84,6 +89,7 @@ class JobService:
             stmt = stmt.where(
                 Job.title.ilike(pattern) | Profile.company.ilike(pattern) | Job.location.ilike(pattern)
             )
+
         if location_type:
             stmt = stmt.where(Job.location_type == location_type)
         if job_type:

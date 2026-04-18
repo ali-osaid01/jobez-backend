@@ -53,6 +53,7 @@ class ProfileResponse(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     # Job seeker fields
+    name: str | None = None
     title: str | None = None
     location: str | None = None
     experience: str | None = None

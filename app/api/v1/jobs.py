@@ -102,8 +102,8 @@ async def create_job(
     db: AsyncSession = Depends(get_db),
 ):
     job = await job_service.create(db, employer, payload)
-    job, company = await job_service.get_by_id(db, job.id)
-    return SuccessResponse(data=_job_response(job, company or ""))
+    company = await job_service.get_employer_company_name(db, employer.id)
+    return SuccessResponse(data=_job_response(job, company))
 
 
 @router.patch("/{job_id}", response_model=SuccessResponse[JobResponse])

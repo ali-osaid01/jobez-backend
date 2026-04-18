@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
 
+    # ChromaDB
+    CHROMA_HOST: str = "localhost"
+    CHROMA_PORT: int = 8001
+
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 

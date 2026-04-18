@@ -6,8 +6,12 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://jobez:jobez_secret@db:5432/jobez
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
     depends_on:
       db:
+        condition: service_healthy
+      chromadb:
         condition: service_healthy
     volumes:
       - .:/app
@@ -28,5 +32,21 @@ services:
       interval: 5s
       retries: 5
 
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chromadata:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
+  chromadata:
