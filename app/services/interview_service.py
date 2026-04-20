@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.interview_agent import interview_agent
 from app.core.enums import ApplicationStatus, InterviewStatus
 from app.core.exceptions import ForbiddenException, NotFoundException
 from app.models.application import Application
@@ -11,6 +12,15 @@ from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.interview import InterviewCreate, InterviewResponsesRequest, InterviewUpdate
+
+# Maps profile.experience → the difficulty level of questions to generate
+_EXPERIENCE_TO_DIFFICULTY: dict[str | None, str] = {
+    "0-1":  "medium",
+    "1-3":  "hard",
+    "3-5":  "hard",
+    "5-10": "extra hard",
+    "10+":  "extra hard",
+}
 
 
 class InterviewService:
@@ -126,46 +136,43 @@ class InterviewService:
         if interview.applicant_id != user_id:
             raise ForbiddenException("You can only start your own interviews")
 
-        interview.status = InterviewStatus.IN_PROGRESS
+        # Idempotent — if questions already generated, just resume
+        if interview.questions:
+            interview.status = InterviewStatus.IN_PROGRESS
+            await db.flush()
+            return interview
 
-        # Stub questions — replace with AI-generated questions later
-        interview.questions = [
-            {
-                "id": "q1",
-                "question": "Tell me about a challenging project you worked on recently.",
-                "type": "behavioral",
-                "category": "Problem Solving",
-                "expectedDuration": 120,
-            },
-            {
-                "id": "q2",
-                "question": "How do you approach learning a new technology or framework?",
-                "type": "behavioral",
-                "category": "Learning Ability",
-                "expectedDuration": 90,
-            },
-            {
-                "id": "q3",
-                "question": "Describe a situation where you had to work with a difficult team member.",
-                "type": "situational",
-                "category": "Teamwork",
-                "expectedDuration": 120,
-            },
-            {
-                "id": "q4",
-                "question": "Walk me through how you would design a scalable REST API.",
-                "type": "technical",
-                "category": "System Design",
-                "expectedDuration": 150,
-            },
-            {
-                "id": "q5",
-                "question": "What's your approach to debugging a production issue?",
-                "type": "technical",
-                "category": "Problem Solving",
-                "expectedDuration": 120,
-            },
-        ]
+        # Fetch candidate profile for personalization
+        profile_stmt = select(Profile).where(Profile.user_id == user_id)
+        profile = (await db.execute(profile_stmt)).scalar_one_or_none()
+
+        # Fetch the job for context
+        job_stmt = select(Job).where(Job.id == interview.job_id)
+        job = (await db.execute(job_stmt)).scalar_one_or_none()
+
+        # Derive question difficulty from candidate's experience level
+        experience = profile.experience if profile else None
+        difficulty = _EXPERIENCE_TO_DIFFICULTY.get(experience, "medium")
+
+        candidate_profile = {
+            "title": profile.title if profile else None,
+            "experience": experience,
+            "skills": profile.skills if profile else [],
+            "bio": profile.bio if profile else None,
+            "work_experience": profile.work_experience if profile else [],
+        }
+        job_dict = {
+            "title": job.title if job else interview.job_title,
+            "description": job.description if job else "",
+            "requirements": job.requirements if job else [],
+        }
+
+        interview.questions = await interview_agent.generate_questions(
+            candidate_profile=candidate_profile,
+            job=job_dict,
+            difficulty=difficulty,
+        )
+        interview.status = InterviewStatus.IN_PROGRESS
 
         await db.flush()
         return interview

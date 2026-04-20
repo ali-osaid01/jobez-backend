@@ -1,6 +1,8 @@
+import asyncio
 import uuid
 from datetime import date
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,22 @@ from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.job import JobCreate, JobUpdate
+from app.vectordb.collections import get_jobs_collection, get_resumes_collection
+from app.vectordb.embeddings import build_job_text, embed_text
+
+logger = structlog.get_logger()
+
+
+async def _index_job(job_id: str, text: str) -> None:
+    """Embed a job and upsert into ChromaDB. Runs as a background task."""
+    try:
+        vec = await embed_text(text)
+        if not vec:
+            return
+        get_jobs_collection().upsert(ids=[job_id], embeddings=[vec], documents=[text])
+        logger.info("job_indexed", job_id=job_id)
+    except Exception as exc:
+        logger.error("job_index_failed", job_id=job_id, error=str(exc))
 
 
 class JobService:
@@ -36,6 +54,7 @@ class JobService:
         db.add(job)
         await db.flush()
         await db.refresh(job)
+        asyncio.create_task(_index_job(str(job.id), build_job_text(job)))
         return job
 
     async def _get_job(self, db: AsyncSession, job_id: uuid.UUID) -> Job:
@@ -169,15 +188,56 @@ class JobService:
             return True
 
     async def get_recommended(self, db: AsyncSession, user_id: uuid.UUID) -> list[tuple[Job, str]]:
+        # Try to fetch user's profile embedding from ChromaDB
+        user_vec: list[float] | None = None
+        try:
+            result = get_resumes_collection().get(ids=[str(user_id)], include=["embeddings"])
+            embeddings = result.get("embeddings") or []
+            if embeddings and embeddings[0]:
+                user_vec = embeddings[0]
+        except Exception as exc:
+            logger.warning("resume_embedding_fetch_failed", user_id=str(user_id), error=str(exc))
+
+        # Fallback: no embedding yet → return latest active jobs
+        if not user_vec:
+            logger.info("recommended_fallback_latest", user_id=str(user_id))
+            stmt = (
+                select(Job, Profile.company)
+                .join(Profile, Profile.user_id == Job.employer_id)
+                .where(Job.status == JobStatus.ACTIVE)
+                .order_by(Job.created_at.desc())
+                .limit(10)
+            )
+            rows = await db.execute(stmt)
+            return list(rows.all())
+
+        # Cosine similarity query against jobs collection
+        try:
+            chroma_result = get_jobs_collection().query(
+                query_embeddings=[user_vec],
+                n_results=10,
+                include=["distances"],
+            )
+            job_id_strs: list[str] = chroma_result["ids"][0] if chroma_result["ids"] else []
+        except Exception as exc:
+            logger.error("chroma_query_failed", user_id=str(user_id), error=str(exc))
+            return []
+
+        if not job_id_strs:
+            return []
+
+        # Fetch matching jobs from Postgres (with company join)
+        job_uuids = [uuid.UUID(jid) for jid in job_id_strs]
         stmt = (
             select(Job, Profile.company)
             .join(Profile, Profile.user_id == Job.employer_id)
-            .where(Job.status == JobStatus.ACTIVE)
-            .order_by(Job.created_at.desc())
-            .limit(10)
+            .where(Job.id.in_(job_uuids), Job.status == JobStatus.ACTIVE)
         )
-        result = await db.execute(stmt)
-        return list(result.all())
+        rows = await db.execute(stmt)
+        jobs_by_id: dict[str, tuple[Job, str]] = {str(job.id): (job, company or "") for job, company in rows.all()}
+
+        # Return in ChromaDB similarity order
+        return [jobs_by_id[jid] for jid in job_id_strs if jid in jobs_by_id]
 
 
 job_service = JobService()
