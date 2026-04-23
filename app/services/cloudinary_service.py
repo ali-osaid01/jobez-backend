@@ -17,8 +17,6 @@ class CloudinaryService:
         self._configured = False
 
     def _ensure_configured(self):
-        if self._configured:
-            return
         settings = get_settings()
         if not settings.CLOUDINARY_CLOUD_NAME:
             raise ValidationError("Cloudinary is not configured")
@@ -30,20 +28,15 @@ class CloudinaryService:
         self._configured = True
 
     async def upload_resume(self, file: UploadFile) -> tuple[str, str]:
-        """Upload a resume file. Returns (url, public_id)."""
         if not file.filename:
             raise ValidationError("No file provided")
-
         ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
         if ext not in ALLOWED_EXTENSIONS:
             raise ValidationError(f"File type '{ext}' not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
-
         contents = await file.read()
         if len(contents) > MAX_FILE_SIZE:
             raise ValidationError("File size exceeds 10 MB limit")
-
         self._ensure_configured()
-
         result = cloudinary.uploader.upload(
             contents,
             resource_type="raw",

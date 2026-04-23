@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import ApplicationStatus, JobStatus
-from app.core.exceptions import ConflictException, ForbiddenException, InvalidTransitionException, NotFoundException
+from app.core.exceptions import ConflictException, InvalidTransitionException, NotFoundException
 from app.models.application import Application
 from app.models.job import Job
 from app.models.profile import Profile
@@ -96,7 +96,7 @@ class ApplicationService:
             )
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = (await db.execute(count_stmt)).scalar_one()
+        total = await db.scalar(count_stmt)
 
         stmt = stmt.order_by(Application.created_at.desc()).offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
@@ -123,6 +123,7 @@ class ApplicationService:
             application.rejection_reason = data.rejectionReason
 
         await db.flush()
+        await db.refresh(application)  # Refresh to get updated timestamps
         return application
 
     async def get_resume_url(self, db: AsyncSession, app_id: uuid.UUID, employer_id: uuid.UUID) -> str:
