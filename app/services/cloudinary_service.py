@@ -1,3 +1,5 @@
+import asyncio
+
 import cloudinary
 import cloudinary.uploader
 import structlog
@@ -44,7 +46,8 @@ class CloudinaryService:
 
         self._ensure_configured()
 
-        result = cloudinary.uploader.upload(
+        result = await asyncio.to_thread(
+            cloudinary.uploader.upload,
             contents,
             resource_type="raw",
             folder="jobez/resumes",
@@ -55,7 +58,7 @@ class CloudinaryService:
 
     async def delete_file(self, public_id: str) -> None:
         self._ensure_configured()
-        cloudinary.uploader.destroy(public_id, resource_type="raw")
+        await asyncio.to_thread(cloudinary.uploader.destroy, public_id, resource_type="raw")
         logger.info("file_deleted", public_id=public_id)
 
 

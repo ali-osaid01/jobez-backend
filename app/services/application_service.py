@@ -102,6 +102,23 @@ class ApplicationService:
         result = await db.execute(stmt)
         return list(result.scalars().all()), total
 
+    async def get_status_counts(self, db: AsyncSession, user_id: uuid.UUID) -> dict:
+        stmt = (
+            select(Application.status, func.count().label("cnt"))
+            .where(Application.applicant_id == user_id)
+            .group_by(Application.status)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        counts = {row.status: row.cnt for row in rows}
+        total = sum(counts.values())
+        return {
+            "total": total,
+            "pending": counts.get(ApplicationStatus.PENDING, 0),
+            "shortlisted": counts.get(ApplicationStatus.SHORTLISTED, 0),
+            "interviewScheduled": counts.get(ApplicationStatus.INTERVIEW_SCHEDULED, 0),
+        }
+
     async def update_status(
         self, db: AsyncSession, app_id: uuid.UUID, employer_id: uuid.UUID, data: ApplicationStatusUpdate
     ) -> Application:

@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import JobStatus
@@ -70,10 +70,21 @@ class JobService:
         stmt = select(Profile.company).where(Profile.user_id == employer_id).limit(1)
         return (await db.execute(stmt)).scalar_one_or_none() or ""
 
-    async def get_by_id(self, db: AsyncSession, job_id: uuid.UUID) -> tuple[Job, str]:
-        """Returns (Job, company_name) by joining employer Profile."""
+    async def get_by_id(self, db: AsyncSession, job_id: uuid.UUID, user_id: uuid.UUID | None = None) -> tuple[Job, str, bool]:
+        """Returns (Job, company_name, is_booked) by joining employer Profile."""
+        if user_id:
+            is_booked_col = (
+                select(Bookmark.id)
+                .where(Bookmark.job_id == Job.id, Bookmark.user_id == user_id)
+                .correlate(Job)
+                .exists()
+                .label("is_booked")
+            )
+        else:
+            is_booked_col = literal(False).label("is_booked")
+
         stmt = (
-            select(Job, Profile.company)
+            select(Job, Profile.company, is_booked_col)
             .join(Profile, Profile.user_id == Job.employer_id)
             .where(Job.id == job_id)
             .limit(1)
@@ -82,7 +93,7 @@ class JobService:
         row = result.first()
         if not row:
             raise NotFoundException("Job")
-        return row  # (Job, company_str)
+        return row  # (Job, company_str, is_booked)
 
     async def list_jobs(
         self,
@@ -98,8 +109,20 @@ class JobService:
         status: str | None = "active",
         sort_by: str | None = "postedDate",
         sort_order: str | None = "desc",
-    ) -> tuple[list[tuple[Job, str]], int]:
-        stmt = select(Job, Profile.company).join(Profile, Profile.user_id == Job.employer_id)
+        user_id: uuid.UUID | None = None,
+    ) -> tuple[list[tuple[Job, str, bool]], int]:
+        if user_id:
+            is_booked_col = (
+                select(Bookmark.id)
+                .where(Bookmark.job_id == Job.id, Bookmark.user_id == user_id)
+                .correlate(Job)
+                .exists()
+                .label("is_booked")
+            )
+        else:
+            is_booked_col = literal(False).label("is_booked")
+
+        stmt = select(Job, Profile.company, is_booked_col).join(Profile, Profile.user_id == Job.employer_id)
 
         if status:
             stmt = stmt.where(Job.status == status)

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # Gemini (optional — AI features are stubbed)
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # Cloudinary
     CLOUDINARY_CLOUD_NAME: str = ""

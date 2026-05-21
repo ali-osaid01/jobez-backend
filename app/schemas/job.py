@@ -53,6 +53,7 @@ class JobResponse(BaseModel):
     matchScore: float | None = None
     applicantsCount: int
     status: str
+    isBooked: bool = False
     createdAt: str
     updatedAt: str
 

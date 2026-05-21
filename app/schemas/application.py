@@ -3,6 +3,7 @@ from datetime import date
 from pydantic import BaseModel
 
 from app.core.enums import ApplicationStatus
+from app.schemas.common import PaginatedResponse
 
 
 class ApplicationCreate(BaseModel):
@@ -34,3 +35,14 @@ class ApplicationResponse(BaseModel):
     updatedAt: str
 
     model_config = {"from_attributes": True}
+
+
+class ApplicationCounts(BaseModel):
+    total: int
+    pending: int
+    shortlisted: int
+    interviewScheduled: int
+
+
+class ApplicationListResponse(PaginatedResponse[ApplicationResponse]):
+    counts: ApplicationCounts | None = None

@@ -46,22 +46,17 @@ class ResumeAgent:
                         ],
                     )
                 ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                ),
             )
 
-            raw = response.text.strip()
-            # Strip markdown code fences if present
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-                if raw.endswith("```"):
-                    raw = raw[:-3]
-                raw = raw.strip()
-
-            result = json.loads(raw)
+            result = json.loads(response.text)
             logger.info("resume_parsed_successfully", fields=list(result.keys()))
             return result
 
         except json.JSONDecodeError as e:
-            logger.error("resume_parse_json_error", error=str(e), raw=raw[:300])
+            logger.error("resume_parse_json_error", error=str(e), raw=response.text[:300])
             return self._stub_response()
         except Exception as e:
             logger.error("resume_parse_failed", error=str(e))

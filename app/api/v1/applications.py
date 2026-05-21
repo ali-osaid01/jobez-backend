@@ -8,8 +8,8 @@ from app.api.deps import get_current_user, require_role
 from app.core.enums import UserRole
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.application import ApplicationCreate, ApplicationResponse, ApplicationStatusUpdate
-from app.schemas.common import PaginatedResponse, SuccessResponse
+from app.schemas.application import ApplicationCounts, ApplicationCreate, ApplicationListResponse, ApplicationResponse, ApplicationStatusUpdate
+from app.schemas.common import SuccessResponse
 from app.services.application_service import application_service
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
@@ -35,7 +35,7 @@ def _app_response(app) -> ApplicationResponse:
     )
 
 
-@router.get("", response_model=PaginatedResponse[ApplicationResponse])
+@router.get("", response_model=ApplicationListResponse)
 async def list_applications(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -48,12 +48,17 @@ async def list_applications(
     apps, total = await application_service.list_applications(
         db, user, page=page, limit=limit, status=status, job_id=jobId, search=search
     )
-    return PaginatedResponse(
+    counts = None
+    if user.role.value == "job-seeker":
+        raw = await application_service.get_status_counts(db, user.id)
+        counts = ApplicationCounts(**raw)
+    return ApplicationListResponse(
         data=[_app_response(a) for a in apps],
         total=total,
         page=page,
         limit=limit,
         total_pages=math.ceil(total / limit) if total > 0 else 0,
+        counts=counts,
     )
 
 
