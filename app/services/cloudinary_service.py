@@ -56,6 +56,18 @@ class CloudinaryService:
         logger.info("resume_uploaded", public_id=result["public_id"])
         return result["secure_url"], result["public_id"]
 
+    def get_download_url(self, url: str) -> str:
+        """Return a forced-download URL by inserting fl_attachment into the Cloudinary URL.
+
+        Cloudinary raw URLs have the form:
+            https://res.cloudinary.com/{cloud}/raw/upload/{version}/{path}
+        Inserting fl_attachment after /raw/upload/ makes Cloudinary respond with
+            Content-Disposition: attachment, so browsers download the file.
+        """
+        if "/raw/upload/" in url:
+            return url.replace("/raw/upload/", "/raw/upload/fl_attachment/", 1)
+        return url
+
     async def delete_file(self, public_id: str) -> None:
         self._ensure_configured()
         await asyncio.to_thread(cloudinary.uploader.destroy, public_id, resource_type="raw")

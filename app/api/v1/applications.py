@@ -11,6 +11,7 @@ from app.models.user import User
 from app.schemas.application import ApplicationCounts, ApplicationCreate, ApplicationListResponse, ApplicationResponse, ApplicationStatusUpdate
 from app.schemas.common import SuccessResponse
 from app.services.application_service import application_service
+from app.services.cloudinary_service import cloudinary_service
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
@@ -90,7 +91,7 @@ async def get_resume(
     db: AsyncSession = Depends(get_db),
 ):
     url = await application_service.get_resume_url(db, app_id, employer.id)
-    return SuccessResponse(data={"url": url})
+    return SuccessResponse(data={"url": cloudinary_service.get_download_url(url)})
 
 
 @router.post("/{app_id}/contact")
