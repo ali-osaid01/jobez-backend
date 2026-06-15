@@ -6,7 +6,7 @@ from app.core.enums import UserRole
 class EducationItem(BaseModel):
     degree: str
     institution: str
-    year: str
+    year: str | int | None = None
 
 
 class WorkExperienceItem(BaseModel):
@@ -53,6 +53,7 @@ class ProfileResponse(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     # Job seeker fields
+    name: str | None = None
     title: str | None = None
     location: str | None = None
     experience: str | None = None

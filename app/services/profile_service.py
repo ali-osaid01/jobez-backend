@@ -1,5 +1,7 @@
+import asyncio
 import uuid
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +9,22 @@ from app.core.exceptions import NotFoundException
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.profile import ProfileUpdateRequest
+from app.vectordb.collections import get_resumes_collection
+from app.vectordb.embeddings import build_profile_text, embed_text
+
+logger = structlog.get_logger()
+
+
+async def _index_profile(user_id: str, text: str) -> None:
+    """Embed a user profile and upsert into ChromaDB. Runs as a background task."""
+    try:
+        vec = await embed_text(text)
+        if not vec:
+            return
+        get_resumes_collection().upsert(ids=[user_id], embeddings=[vec], documents=[text])
+        logger.info("profile_indexed", user_id=user_id)
+    except Exception as exc:
+        logger.error("profile_index_failed", user_id=user_id, error=str(exc))
 
 
 class ProfileService:
@@ -47,6 +65,11 @@ class ProfileService:
 
         await db.flush()
         await db.refresh(profile)
+
+        # Trigger embedding when onboarding completes
+        if data.onboardingComplete is True:
+            asyncio.create_task(_index_profile(str(user.id), build_profile_text(profile)))
+
         return profile
 
     async def update_resume(self, db: AsyncSession, user_id: uuid.UUID, url: str, public_id: str) -> Profile:

@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 
-
 class UserService:
     async def get_by_id(self, db: AsyncSession, user_id: uuid.UUID) -> User | None:
         stmt = select(User).where(User.id == user_id)

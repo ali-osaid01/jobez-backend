@@ -15,7 +15,7 @@ from app.services.job_service import job_service
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 
-def _job_response(job, company: str) -> JobResponse:
+def _job_response(job, company: str, is_booked: bool = False) -> JobResponse:
     return JobResponse(
         id=str(job.id),
         title=job.title,
@@ -34,6 +34,7 @@ def _job_response(job, company: str) -> JobResponse:
         employerId=str(job.employer_id),
         applicantsCount=job.applicants_count,
         status=job.status.value if hasattr(job.status, "value") else job.status,
+        isBooked=is_booked,
         createdAt=job.created_at.isoformat(),
         updatedAt=job.updated_at.isoformat(),
     )
@@ -44,14 +45,14 @@ async def list_jobs(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     search: str | None = None,
-    locationType: str | None = None,
-    type: str | None = None,
-    experienceLevel: str | None = None,
-    employerId: str | None = None,
+    location_type: str | None = None,
+    job_type: str | None = None,
+    experience_level: str | None = None,
+    employer_id: str | None = None,
     status: str | None = "active",
-    sortBy: str | None = "postedDate",
-    sortOrder: str | None = "desc",
-    _user: User = Depends(get_current_user),
+    sort_by: str | None = "postedDate",
+    sort_order: str | None = "desc",
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     rows, total = await job_service.list_jobs(
@@ -59,16 +60,17 @@ async def list_jobs(
         page=page,
         limit=limit,
         search=search,
-        location_type=locationType,
-        job_type=type,
-        experience_level=experienceLevel,
-        employer_id=uuid.UUID(employerId) if employerId else None,
+        location_type=location_type,
+        job_type=job_type,
+        experience_level=experience_level,
+        employer_id=uuid.UUID(employer_id) if employer_id else None,
         status=status,
-        sort_by=sortBy,
-        sort_order=sortOrder,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        user_id=user.id,
     )
     return PaginatedResponse(
-        data=[_job_response(job, company or "") for job, company in rows],
+        data=[_job_response(job, company or "", bool(is_booked)) for job, company, is_booked in rows],
         total=total,
         page=page,
         limit=limit,
@@ -88,11 +90,11 @@ async def get_recommended_jobs(
 @router.get("/{job_id}", response_model=SuccessResponse[JobResponse])
 async def get_job(
     job_id: uuid.UUID,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    job, company = await job_service.get_by_id(db, job_id)
-    return SuccessResponse(data=_job_response(job, company or ""))
+    job, company, is_booked = await job_service.get_by_id(db, job_id, user_id=user.id)
+    return SuccessResponse(data=_job_response(job, company or "", bool(is_booked)))
 
 
 @router.post("", status_code=201, response_model=SuccessResponse[JobResponse])
@@ -102,8 +104,8 @@ async def create_job(
     db: AsyncSession = Depends(get_db),
 ):
     job = await job_service.create(db, employer, payload)
-    job, company = await job_service.get_by_id(db, job.id)
-    return SuccessResponse(data=_job_response(job, company or ""))
+    company = await job_service.get_employer_company_name(db, employer.id)
+    return SuccessResponse(data=_job_response(job, company))
 
 
 @router.patch("/{job_id}", response_model=SuccessResponse[JobResponse])

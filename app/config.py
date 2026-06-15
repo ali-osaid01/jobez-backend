@@ -22,12 +22,16 @@ class Settings(BaseSettings):
 
     # Gemini (optional — AI features are stubbed)
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # Cloudinary
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
+
+    # ChromaDB
+    CHROMA_HOST: str = "localhost"
+    CHROMA_PORT: int = 8001
 
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 60
