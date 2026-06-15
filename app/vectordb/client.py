@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """ChromaDB HTTP client — lazy singleton.
 
 In Docker: CHROMA_HOST=chromadb, CHROMA_PORT=8000 (set via docker-compose env).
@@ -11,10 +13,10 @@ from app.config import get_settings
 
 logger = structlog.get_logger()
 
-_client: chromadb.HttpClient | None = None
+_client: "chromadb.HttpClient" | None = None
 
 
-def get_chroma_client() -> chromadb.HttpClient:
+def get_chroma_client() -> "chromadb.HttpClient":
     global _client
     if _client is None:
         settings = get_settings()

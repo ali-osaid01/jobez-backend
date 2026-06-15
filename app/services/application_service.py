@@ -140,7 +140,7 @@ class ApplicationService:
             application.rejection_reason = data.rejectionReason
 
         await db.flush()
-        await db.refresh(application)  # Refresh to get updated timestamps
+        await db.refresh(application)
         return application
 
     async def get_resume_url(self, db: AsyncSession, app_id: uuid.UUID, employer_id: uuid.UUID) -> str:
