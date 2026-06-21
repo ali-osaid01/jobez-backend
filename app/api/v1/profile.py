@@ -8,8 +8,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.profile import ProfileResponse, ProfileUpdateRequest, ResumeExtractResponse
-from app.services.cloudinary_service import cloudinary_service
 from app.services.profile_service import profile_service
+from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
@@ -35,7 +35,7 @@ def _profile_response(profile, user: User) -> ProfileResponse:
         education=profile.education,
         workExperience=profile.work_experience,
         certifications=profile.certifications,
-        resumeUrl=profile.resume,
+        resumeUrl=storage_service.get_download_url(profile.resume) if profile.resume else None,
         bio=profile.bio,
         company=profile.company,
         companySize=profile.company_size,
@@ -88,9 +88,12 @@ async def upload_resume(
         raise ValidationError("File size exceeds 5 MB limit")
 
     await file.seek(0)
-    url, public_id = await cloudinary_service.upload_resume(file)
+    url, public_id = await storage_service.upload_resume(file)
     await profile_service.update_resume(db, user.id, url, public_id)
-    return SuccessResponse(data={"resumeUrl": url}, message="Resume uploaded successfully")
+    return SuccessResponse(
+        data={"resumeUrl": storage_service.get_download_url(url)},
+        message="Resume uploaded successfully",
+    )
 
 
 @router.post("/resume/extract", response_model=SuccessResponse[ResumeExtractResponse])
@@ -105,15 +108,15 @@ async def extract_resume(
     if len(contents) > MAX_FILE_SIZE:
         raise ValidationError("File size exceeds 5 MB limit")
 
-    # Upload to Cloudinary first
+    # Upload to private S3 first.
     await file.seek(0)
-    url, public_id = await cloudinary_service.upload_resume(file)
+    url, public_id = await storage_service.upload_resume(file)
     await profile_service.update_resume(db, user.id, url, public_id)
 
     # Parse with Gemini
     from app.agents.resume_agent import resume_agent
 
     parsed = await resume_agent.parse_resume(contents, ext)
-    parsed["resumeUrl"] = url
+    parsed["resumeUrl"] = storage_service.get_download_url(url)
 
     return SuccessResponse(data=ResumeExtractResponse(**parsed), message="Resume parsed successfully")

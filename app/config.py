@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
 
+    # S3 uploads
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = ""
+    S3_PROFILE_IMAGES_PREFIX: str = "profile-images/"
+    S3_RESUMES_PREFIX: str = "resumes/"
+    S3_PRESIGNED_URL_EXPIRE_SECONDS: int = 3600
+
     # ChromaDB
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8001
