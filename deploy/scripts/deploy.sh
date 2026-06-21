@@ -10,12 +10,16 @@ set -a
 . ./.env.prod
 set +a
 
+compose() {
+  docker compose --env-file .env.prod -f docker-compose.prod.yml "$@"
+}
+
 ./deploy/scripts/render-nginx.sh https
 
-docker compose -f docker-compose.prod.yml build backend
-docker compose -f docker-compose.prod.yml up -d postgres chromadb
-docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
+compose build backend
+compose up -d postgres chromadb
+compose run --rm backend alembic upgrade head
+compose up -d
+compose exec nginx nginx -s reload
 
-docker compose -f docker-compose.prod.yml ps
+compose ps

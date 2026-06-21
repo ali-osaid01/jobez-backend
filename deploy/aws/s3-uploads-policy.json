@@ -5,7 +5,7 @@
       "Sid": "ListUploadsBucket",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::jobez-prod-uploads-923965563410"
+      "Resource": "arn:aws:s3:::jobez-prod-uploads-802589444367"
     },
     {
       "Sid": "ManageUploadObjects",
@@ -15,7 +15,7 @@
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::jobez-prod-uploads-923965563410/*"
+      "Resource": "arn:aws:s3:::jobez-prod-uploads-802589444367/*"
     }
   ]
 }
