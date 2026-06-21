@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from app.core.enums import InterviewType
+from app.schemas.common import PaginatedResponse
 
 
 class InterviewCreate(BaseModel):
@@ -24,6 +25,7 @@ class InterviewUpdate(BaseModel):
 class InterviewResponse(BaseModel):
     id: str
     jobId: str
+    applicationId: str
     jobTitle: str
     company: str
     applicantId: str
@@ -41,6 +43,18 @@ class InterviewResponse(BaseModel):
     updatedAt: str
 
     model_config = {"from_attributes": True}
+
+
+class InterviewCounts(BaseModel):
+    total: int
+    scheduled: int
+    inProgress: int = 0
+    completed: int
+    cancelled: int
+
+
+class InterviewListResponse(PaginatedResponse[InterviewResponse]):
+    counts: InterviewCounts
 
 
 class AIInterviewQuestion(BaseModel):

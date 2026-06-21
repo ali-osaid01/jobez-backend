@@ -42,6 +42,8 @@ class ApplicationCounts(BaseModel):
     pending: int
     shortlisted: int
     interviewScheduled: int
+    rejected: int = 0
+    hired: int = 0
 
 
 class ApplicationListResponse(PaginatedResponse[ApplicationResponse]):

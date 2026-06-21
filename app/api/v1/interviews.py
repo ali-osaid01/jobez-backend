@@ -8,11 +8,13 @@ from app.api.deps import get_current_user, require_role
 from app.core.enums import UserRole
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.common import PaginatedResponse, SuccessResponse
+from app.schemas.common import SuccessResponse
 from app.schemas.interview import (
     AIInterviewResult,
     AIInterviewStartResponse,
     InterviewCreate,
+    InterviewCounts,
+    InterviewListResponse,
     InterviewResponse,
     InterviewResponsesRequest,
     InterviewUpdate,
@@ -26,6 +28,7 @@ def _interview_response(interview) -> InterviewResponse:
     return InterviewResponse(
         id=str(interview.id),
         jobId=str(interview.job_id),
+        applicationId=str(interview.application_id),
         jobTitle=interview.job_title,
         company=interview.company,
         applicantId=str(interview.applicant_id),
@@ -44,7 +47,7 @@ def _interview_response(interview) -> InterviewResponse:
     )
 
 
-@router.get("", response_model=PaginatedResponse[InterviewResponse])
+@router.get("", response_model=InterviewListResponse)
 async def list_interviews(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -56,12 +59,14 @@ async def list_interviews(
     interviews, total = await interview_service.list_interviews(
         db, user, page=page, limit=limit, status=status, interview_type=type
     )
-    return PaginatedResponse(
+    raw_counts = await interview_service.get_status_counts(db, user, interview_type=type)
+    return InterviewListResponse(
         data=[_interview_response(i) for i in interviews],
         total=total,
         page=page,
         limit=limit,
         total_pages=math.ceil(total / limit) if total > 0 else 0,
+        counts=InterviewCounts(**raw_counts),
     )
 
 

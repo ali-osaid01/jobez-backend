@@ -124,7 +124,7 @@ class JobService:
 
         stmt = select(Job, Profile.company, is_booked_col).join(Profile, Profile.user_id == Job.employer_id)
 
-        if status:
+        if status and status != "all":
             stmt = stmt.where(Job.status == status)
         if search:
             pattern = f"%{search}%"
@@ -210,7 +210,14 @@ class JobService:
             await db.flush()
             return True
 
-    async def get_recommended(self, db: AsyncSession, user_id: uuid.UUID) -> list[tuple[Job, str]]:
+    async def get_recommended(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        *,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[tuple[Job, str]], int]:
         # Try to fetch user's profile embedding from ChromaDB
         user_vec: list[float] | None = None
         try:
@@ -224,30 +231,38 @@ class JobService:
         # Fallback: no embedding yet → return latest active jobs
         if not user_vec:
             logger.info("recommended_fallback_latest", user_id=str(user_id))
+            count_stmt = (
+                select(func.count())
+                .select_from(Job)
+                .join(Profile, Profile.user_id == Job.employer_id)
+                .where(Job.status == JobStatus.ACTIVE)
+            )
+            total = (await db.execute(count_stmt)).scalar_one()
             stmt = (
                 select(Job, Profile.company)
                 .join(Profile, Profile.user_id == Job.employer_id)
                 .where(Job.status == JobStatus.ACTIVE)
                 .order_by(Job.created_at.desc())
-                .limit(10)
+                .offset((page - 1) * limit)
+                .limit(limit)
             )
             rows = await db.execute(stmt)
-            return list(rows.all())
+            return list(rows.all()), total
 
         # Cosine similarity query against jobs collection
         try:
             chroma_result = get_jobs_collection().query(
                 query_embeddings=[user_vec],
-                n_results=10,
+                n_results=100,
                 include=["distances"],
             )
             job_id_strs: list[str] = chroma_result["ids"][0] if chroma_result["ids"] else []
         except Exception as exc:
             logger.error("chroma_query_failed", user_id=str(user_id), error=str(exc))
-            return []
+            return [], 0
 
         if not job_id_strs:
-            return []
+            return [], 0
 
         # Fetch matching jobs from Postgres (with company join)
         job_uuids = [uuid.UUID(jid) for jid in job_id_strs]
@@ -260,7 +275,9 @@ class JobService:
         jobs_by_id: dict[str, tuple[Job, str]] = {str(job.id): (job, company or "") for job, company in rows.all()}
 
         # Return in ChromaDB similarity order
-        return [jobs_by_id[jid] for jid in job_id_strs if jid in jobs_by_id]
+        ordered_jobs = [jobs_by_id[jid] for jid in job_id_strs if jid in jobs_by_id]
+        start = (page - 1) * limit
+        return ordered_jobs[start : start + limit], len(ordered_jobs)
 
 
 job_service = JobService()

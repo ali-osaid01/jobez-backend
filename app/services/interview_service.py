@@ -106,6 +106,30 @@ class InterviewService:
         result = await db.execute(stmt)
         return list(result.scalars().all()), total
 
+    async def get_status_counts(self, db: AsyncSession, user: User, *, interview_type: str | None = None) -> dict:
+        stmt = select(Interview.status, func.count().label("cnt"))
+
+        if user.role.value == "job-seeker":
+            stmt = stmt.where(Interview.applicant_id == user.id)
+        else:
+            stmt = stmt.join(Job).where(Job.employer_id == user.id)
+
+        if interview_type:
+            stmt = stmt.where(Interview.type == interview_type)
+
+        stmt = stmt.group_by(Interview.status)
+        result = await db.execute(stmt)
+        rows = result.all()
+        counts = {row.status: row.cnt for row in rows}
+        total = sum(counts.values())
+        return {
+            "total": total,
+            "scheduled": counts.get(InterviewStatus.SCHEDULED, 0),
+            "inProgress": counts.get(InterviewStatus.IN_PROGRESS, 0),
+            "completed": counts.get(InterviewStatus.COMPLETED, 0),
+            "cancelled": counts.get(InterviewStatus.CANCELLED, 0),
+        }
+
     async def update(
         self, db: AsyncSession, interview_id: uuid.UUID, employer_id: uuid.UUID, data: InterviewUpdate
     ) -> Interview:

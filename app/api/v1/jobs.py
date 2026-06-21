@@ -78,13 +78,21 @@ async def list_jobs(
     )
 
 
-@router.get("/recommended", response_model=SuccessResponse[list[JobResponse]])
+@router.get("/recommended", response_model=PaginatedResponse[JobResponse])
 async def get_recommended_jobs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     user: User = Depends(require_role(UserRole.JOB_SEEKER)),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await job_service.get_recommended(db, user.id)
-    return SuccessResponse(data=[_job_response(job, company or "") for job, company in rows])
+    rows, total = await job_service.get_recommended(db, user.id, page=page, limit=limit)
+    return PaginatedResponse(
+        data=[_job_response(job, company or "") for job, company in rows],
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=math.ceil(total / limit) if total > 0 else 0,
+    )
 
 
 @router.get("/{job_id}", response_model=SuccessResponse[JobResponse])

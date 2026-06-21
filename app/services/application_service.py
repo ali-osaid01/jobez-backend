@@ -102,12 +102,30 @@ class ApplicationService:
         result = await db.execute(stmt)
         return list(result.scalars().all()), total
 
-    async def get_status_counts(self, db: AsyncSession, user_id: uuid.UUID) -> dict:
-        stmt = (
-            select(Application.status, func.count().label("cnt"))
-            .where(Application.applicant_id == user_id)
-            .group_by(Application.status)
-        )
+    async def get_status_counts(
+        self,
+        db: AsyncSession,
+        user: User,
+        *,
+        job_id: str | None = None,
+        search: str | None = None,
+    ) -> dict:
+        stmt = select(Application.status, func.count().label("cnt"))
+
+        if user.role.value == "job-seeker":
+            stmt = stmt.where(Application.applicant_id == user.id)
+        else:
+            stmt = stmt.join(Job).where(Job.employer_id == user.id)
+
+        if job_id:
+            stmt = stmt.where(Application.job_id == uuid.UUID(job_id))
+        if search:
+            pattern = f"%{search}%"
+            stmt = stmt.where(
+                Application.applicant_name.ilike(pattern) | Application.job_title.ilike(pattern)
+            )
+
+        stmt = stmt.group_by(Application.status)
         result = await db.execute(stmt)
         rows = result.all()
         counts = {row.status: row.cnt for row in rows}
@@ -117,6 +135,8 @@ class ApplicationService:
             "pending": counts.get(ApplicationStatus.PENDING, 0),
             "shortlisted": counts.get(ApplicationStatus.SHORTLISTED, 0),
             "interviewScheduled": counts.get(ApplicationStatus.INTERVIEW_SCHEDULED, 0),
+            "rejected": counts.get(ApplicationStatus.REJECTED, 0),
+            "hired": counts.get(ApplicationStatus.HIRED, 0),
         }
 
     async def update_status(

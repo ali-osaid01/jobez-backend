@@ -49,10 +49,8 @@ async def list_applications(
     apps, total = await application_service.list_applications(
         db, user, page=page, limit=limit, status=status, job_id=jobId, search=search
     )
-    counts = None
-    if user.role.value == "job-seeker":
-        raw = await application_service.get_status_counts(db, user.id)
-        counts = ApplicationCounts(**raw)
+    raw = await application_service.get_status_counts(db, user, job_id=jobId, search=search)
+    counts = ApplicationCounts(**raw)
     return ApplicationListResponse(
         data=[_app_response(a) for a in apps],
         total=total,
