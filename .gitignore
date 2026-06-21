@@ -9,6 +9,7 @@ build/
 
 # Environment
 .env
+.env.prod
 
 # IDE
 .vscode/
@@ -16,6 +17,7 @@ build/
 
 # Testing
 .pytest_cache/
+.deploy/
 .ruff_cache/
 htmlcov/
 .coverage

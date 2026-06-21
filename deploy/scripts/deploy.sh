@@ -16,5 +16,6 @@ docker compose -f docker-compose.prod.yml build backend
 docker compose -f docker-compose.prod.yml up -d postgres chromadb
 docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
 docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
 
 docker compose -f docker-compose.prod.yml ps

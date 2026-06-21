@@ -3,7 +3,11 @@ __pycache__
 .git
 .github
 .env
+.env.prod
 .venv
+.venv*
 *.egg-info
 .ruff_cache
 .pytest_cache
+deploy/certbot/conf
+deploy/certbot/www
