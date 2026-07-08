@@ -54,23 +54,24 @@ class InterviewAgent:
     def _fallback_questions(self, job_title: str, difficulty: str) -> list[dict]:
         """Safe fallback if Gemini is unavailable or returns unparseable output."""
         return [
-            {"id": "q1",  "question": f"Walk me through your most complex technical project relevant to {job_title}.", "type": "technical",   "category": "Experience",      "expectedDuration": 150},
-            {"id": "q2",  "question": "Explain how you would design a scalable system for this role's core use case.",  "type": "technical",   "category": "System Design",   "expectedDuration": 180},
-            {"id": "q3",  "question": "Describe a performance bottleneck you identified and how you resolved it.",       "type": "technical",   "category": "Optimization",    "expectedDuration": 150},
-            {"id": "q4",  "question": "How do you ensure code quality and maintainability in a fast-moving team?",      "type": "technical",   "category": "Code Quality",    "expectedDuration": 120},
-            {"id": "q5",  "question": "What is your approach to debugging an issue you have never seen before?",        "type": "technical",   "category": "Problem Solving", "expectedDuration": 120},
-            {"id": "q6",  "question": "Describe a technical decision you made that you later regretted and why.",       "type": "technical",   "category": "Reflection",      "expectedDuration": 150},
-            {"id": "q7",  "question": "Tell me about a time you had to push back on a product requirement.",            "type": "behavioral",  "category": "Communication",   "expectedDuration": 120},
-            {"id": "q8",  "question": "Describe a situation where you had to learn something new under tight deadline.", "type": "behavioral",  "category": "Learning",        "expectedDuration": 120},
-            {"id": "q9",  "question": f"You joined a {job_title} team and found the codebase in poor shape. What do you do first?", "type": "situational", "category": "Prioritization", "expectedDuration": 150},
-            {"id": "q10", "question": "A critical bug hits production on a Friday evening. Walk me through your response.", "type": "situational", "category": "Incident Response", "expectedDuration": 150},
+            {"id": "q1", "question": f"Walk me through your most relevant technical project for a {job_title} role.", "type": "technical", "category": "Experience", "expectedDuration": 150},
+            {"id": "q2", "question": "How would you approach the main technical challenge in this job, and why?", "type": "technical", "category": "System Design", "expectedDuration": 150},
+            {"id": "q3", "question": "Describe a bug, bottleneck, or failure you solved in production and the trade-offs you made.", "type": "technical", "category": "Problem Solving", "expectedDuration": 150},
+            {"id": "q4", "question": "Tell me about a time you had to influence a team decision or push back on a requirement.", "type": "behavioral", "category": "Communication", "expectedDuration": 120},
+            {"id": "q5", "question": f"If you joined this {job_title} team and found the codebase or process messy, what would you do in your first week?", "type": "situational", "category": "Prioritization", "expectedDuration": 150},
         ]
 
     async def evaluate_responses(self, job_title: str, questions: list[dict], responses: list[dict]) -> dict:
         prompt = build_evaluation_prompt(job_title, questions, responses)
         raw = await generate(prompt)
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.split("\n", 1)[1] if "\n" in stripped else stripped[3:]
+            if stripped.endswith("```"):
+                stripped = stripped[:-3]
+            stripped = stripped.strip()
         try:
-            return json.loads(raw)
+            return json.loads(stripped)
         except Exception:
             logger.warning("evaluation_failed", raw=raw[:200])
             return {

@@ -182,6 +182,8 @@ class InterviewService:
             "title": profile.title if profile else None,
             "experience": experience,
             "skills": profile.skills if profile else [],
+            "certifications": profile.certifications if profile else [],
+            "education": profile.education if profile else [],
             "bio": profile.bio if profile else None,
             "work_experience": profile.work_experience if profile else [],
         }
@@ -211,26 +213,13 @@ class InterviewService:
         interview.responses = [r.model_dump() for r in data.responses]
         interview.status = InterviewStatus.COMPLETED
 
-        # Stub AI evaluation — replace with real scoring later
-        interview.ai_score = 75.0
-        interview.ai_summary = "Candidate demonstrated solid skills across all areas."
-        interview.evaluation = {
-            "overallScore": 75,
-            "technicalScore": 72,
-            "communicationScore": 80,
-            "problemSolvingScore": 74,
-            "cultureFitScore": 76,
-            "strengths": [
-                "Clear communication style",
-                "Good problem-solving approach",
-                "Relevant technical experience",
-            ],
-            "improvements": [
-                "Could provide more specific examples",
-                "Consider discussing scalability earlier",
-            ],
-            "summary": "Candidate demonstrated solid skills across all areas.",
-        }
+        questions = interview.questions or []
+        responses = interview.responses or []
+        evaluation = await interview_agent.evaluate_responses(interview.job_title, questions, responses)
+
+        interview.ai_score = float(evaluation.get("overallScore", 0))
+        interview.ai_summary = evaluation.get("summary", "")
+        interview.evaluation = evaluation
 
         await db.flush()
 

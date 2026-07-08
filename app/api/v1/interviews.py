@@ -1,17 +1,20 @@
 import math
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
 from app.core.enums import UserRole
+from app.core.exceptions import ForbiddenException, NotFoundException
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.interview import (
     AIInterviewResult,
     AIInterviewStartResponse,
+    InterviewAnswerTranscriptResponse,
     InterviewCreate,
     InterviewCounts,
     InterviewListResponse,
@@ -19,6 +22,7 @@ from app.schemas.interview import (
     InterviewResponsesRequest,
     InterviewUpdate,
 )
+from app.services.openai_voice_service import openai_voice_service
 from app.services.interview_service import interview_service
 
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
@@ -113,6 +117,58 @@ async def start_ai_interview(
             interviewId=str(interview.id),
             questions=interview.questions,
             totalQuestions=len(interview.questions),
+        )
+    )
+
+
+@router.get("/{interview_id}/questions/{question_id}/audio")
+async def get_question_audio(
+    interview_id: uuid.UUID,
+    question_id: str,
+    user: User = Depends(require_role(UserRole.JOB_SEEKER)),
+    db: AsyncSession = Depends(get_db),
+):
+    interview = await interview_service.get_by_id(db, interview_id)
+    if interview.applicant_id != user.id:
+        raise ForbiddenException("You can only access your own interview audio")
+
+    questions = interview.questions or []
+    question = next((q for q in questions if q.get("id") == question_id), None)
+    if not question:
+        raise NotFoundException("Question")
+
+    audio_bytes = await openai_voice_service.text_to_speech(question["question"])
+
+    return Response(content=audio_bytes, media_type="audio/mpeg")
+
+
+@router.post("/{interview_id}/questions/{question_id}/transcribe", response_model=SuccessResponse[InterviewAnswerTranscriptResponse])
+async def transcribe_answer(
+    interview_id: uuid.UUID,
+    question_id: str,
+    audio: UploadFile = File(...),
+    duration: int = Form(0),
+    timestamp: str = Form(...),
+    user: User = Depends(require_role(UserRole.JOB_SEEKER)),
+    db: AsyncSession = Depends(get_db),
+):
+    interview = await interview_service.get_by_id(db, interview_id)
+    if interview.applicant_id != user.id:
+        raise ForbiddenException("You can only transcribe your own interview answers")
+
+    content = await audio.read()
+    transcript = await openai_voice_service.transcribe_audio(
+        filename=audio.filename or f"{question_id}.webm",
+        content=content,
+        content_type=audio.content_type,
+    )
+    return SuccessResponse(
+        data=InterviewAnswerTranscriptResponse(
+            interviewId=str(interview.id),
+            questionId=question_id,
+            transcript=transcript,
+            duration=duration,
+            timestamp=timestamp,
         )
     )
 

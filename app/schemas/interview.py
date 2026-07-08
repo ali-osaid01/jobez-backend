@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 from app.core.enums import InterviewType
 from app.schemas.common import PaginatedResponse
@@ -73,7 +73,15 @@ class AIInterviewStartResponse(BaseModel):
 
 class InterviewResponseSubmission(BaseModel):
     questionId: str
-    response: str
+    response: str = Field(validation_alias=AliasChoices("response", "answer"), serialization_alias="response")
+    duration: int
+    timestamp: str
+
+
+class InterviewAnswerTranscriptResponse(BaseModel):
+    interviewId: str
+    questionId: str
+    transcript: str
     duration: int
     timestamp: str
 

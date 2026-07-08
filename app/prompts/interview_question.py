@@ -28,7 +28,14 @@ def build_question_prompt(candidate_profile: dict, job: dict, difficulty: str) -
     requirements = ", ".join(job.get("requirements") or []) or "not specified"
     difficulty_desc = _DIFFICULTY_DESCRIPTIONS.get(difficulty, _DIFFICULTY_DESCRIPTIONS["medium"])
 
-    return f"""You are a senior technical interviewer conducting an AI interview. Generate exactly 10 interview questions.
+    certifications = ", ".join(candidate_profile.get("certifications") or []) or "not specified"
+    education = "; ".join(
+        f"{e.get('degree', '')} from {e.get('institution', '')} ({e.get('year', '')})"
+        for e in (candidate_profile.get("education") or [])
+        if e.get("degree") or e.get("institution")
+    ) or "not specified"
+
+    return f"""You are a senior technical interviewer conducting an AI interview. Generate exactly 5 interview questions.
 
 DIFFICULTY LEVEL: {difficulty.upper()}
 {difficulty_desc}
@@ -37,6 +44,8 @@ CANDIDATE PROFILE:
 - Current title: {candidate_profile.get("title") or "not specified"}
 - Years of experience: {candidate_profile.get("experience") or "not specified"}
 - Skills: {skills}
+- Certifications: {certifications}
+- Education: {education}
 - Bio: {candidate_profile.get("bio") or "not specified"}
 - Work history: {work_exp}
 
@@ -46,7 +55,7 @@ JOB THEY APPLIED FOR:
 - Requirements: {requirements}
 
 INSTRUCTIONS:
-- Generate exactly 10 questions in this mix: 6 technical, 2 behavioral, 2 situational
+- Generate exactly 5 questions in this mix: 3 technical, 1 behavioral, 1 situational
 - Technical questions must directly relate to their listed skills AND the job requirements
 - Behavioral questions should reference realistic scenarios from their work history
 - Situational questions should be grounded in the specific job context
@@ -55,7 +64,7 @@ INSTRUCTIONS:
 - Questions should feel specific to this candidate, not copy-paste generic interview prep
 
 Return ONLY a valid JSON array. No markdown, no explanation. Each item must have:
-- "id": string (q1, q2, ... q10)
+- "id": string (q1, q2, ... q5)
 - "question": the full question text
 - "type": one of "technical", "behavioral", "situational"
 - "category": short label (e.g. "System Design", "Problem Solving", "Teamwork")
