@@ -16,6 +16,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleLoginRequest(BaseModel):
+    credential: str
+    role: UserRole | None = None
+
+
 class RefreshRequest(BaseModel):
     refreshToken: str
 

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundException
+from app.core.enums import UserRole
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.profile import ProfileUpdateRequest
@@ -66,8 +67,8 @@ class ProfileService:
         await db.flush()
         await db.refresh(profile)
 
-        # Trigger embedding when onboarding completes
-        if data.onboardingComplete is True:
+        # Keep candidate embeddings fresh after onboarding and later profile edits.
+        if user.role == UserRole.JOB_SEEKER and (data.onboardingComplete is True or user.onboarding_complete):
             asyncio.create_task(_index_profile(str(user.id), build_profile_text(profile)))
 
         return profile

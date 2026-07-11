@@ -31,6 +31,13 @@ async def _index_job(job_id: str, text: str) -> None:
         logger.error("job_index_failed", job_id=job_id, error=str(exc))
 
 
+def _distance_to_match_score(distance: float | None) -> float | None:
+    if distance is None:
+        return None
+    similarity = max(0.0, 1.0 - distance)
+    return round(similarity * 100, 2)
+
+
 class JobService:
     async def create(self, db: AsyncSession, employer: User, data: JobCreate) -> Job:
         job = Job(
@@ -184,6 +191,10 @@ class JobService:
         # Fetch company from profile for the response
         stmt = select(Profile.company).where(Profile.user_id == employer_id)
         company = (await db.execute(stmt)).scalar_one_or_none() or ""
+
+        if job.status == JobStatus.ACTIVE:
+            asyncio.create_task(_index_job(str(job.id), build_job_text(job)))
+
         return job, company
 
     async def delete(self, db: AsyncSession, job_id: uuid.UUID, employer_id: uuid.UUID) -> None:
@@ -217,7 +228,7 @@ class JobService:
         *,
         page: int = 1,
         limit: int = 20,
-    ) -> tuple[list[tuple[Job, str]], int]:
+    ) -> tuple[list[tuple[Job, str, float | None]], int]:
         # Try to fetch user's profile embedding from ChromaDB
         user_vec: list[float] | None = None
         try:
@@ -228,40 +239,30 @@ class JobService:
         except Exception as exc:
             logger.warning("resume_embedding_fetch_failed", user_id=str(user_id), error=str(exc))
 
-        # Fallback: no embedding yet → return latest active jobs
         if not user_vec:
-            logger.info("recommended_fallback_latest", user_id=str(user_id))
-            count_stmt = (
-                select(func.count())
-                .select_from(Job)
-                .join(Profile, Profile.user_id == Job.employer_id)
-                .where(Job.status == JobStatus.ACTIVE)
-            )
-            total = (await db.execute(count_stmt)).scalar_one()
-            stmt = (
-                select(Job, Profile.company)
-                .join(Profile, Profile.user_id == Job.employer_id)
-                .where(Job.status == JobStatus.ACTIVE)
-                .order_by(Job.created_at.desc())
-                .offset((page - 1) * limit)
-                .limit(limit)
-            )
-            rows = await db.execute(stmt)
-            return list(rows.all()), total
+            logger.info("recommended_empty_no_embedding", user_id=str(user_id))
+            return [], 0
 
         # Cosine similarity query against jobs collection
         try:
-            chroma_result = get_jobs_collection().query(
+            jobs_collection = get_jobs_collection()
+            collection_count = jobs_collection.count()
+            if collection_count <= 0:
+                logger.info("recommended_empty_no_jobs_indexed", user_id=str(user_id))
+                return [], 0
+            chroma_result = jobs_collection.query(
                 query_embeddings=[user_vec],
-                n_results=100,
+                n_results=collection_count,
                 include=["distances"],
             )
             job_id_strs: list[str] = chroma_result["ids"][0] if chroma_result["ids"] else []
+            distances: list[float | None] = chroma_result.get("distances", [[]])[0] if chroma_result.get("distances") else []
         except Exception as exc:
             logger.error("chroma_query_failed", user_id=str(user_id), error=str(exc))
             return [], 0
 
         if not job_id_strs:
+            logger.info("recommended_empty_chroma_result", user_id=str(user_id))
             return [], 0
 
         # Fetch matching jobs from Postgres (with company join)
@@ -274,8 +275,20 @@ class JobService:
         rows = await db.execute(stmt)
         jobs_by_id: dict[str, tuple[Job, str]] = {str(job.id): (job, company or "") for job, company in rows.all()}
 
-        # Return in ChromaDB similarity order
-        ordered_jobs = [jobs_by_id[jid] for jid in job_id_strs if jid in jobs_by_id]
+        # Return in ChromaDB similarity order, with a minimum score threshold.
+        ordered_jobs: list[tuple[Job, str, float | None]] = []
+        for index, jid in enumerate(job_id_strs):
+            if jid not in jobs_by_id:
+                continue
+            score = _distance_to_match_score(distances[index] if index < len(distances) else None)
+            if score is None or score < 35.0:
+                continue
+            job, company = jobs_by_id[jid]
+            ordered_jobs.append((job, company, score))
+
+        if not ordered_jobs:
+            logger.info("recommended_empty_below_threshold", user_id=str(user_id))
+            return [], 0
         start = (page - 1) * limit
         return ordered_jobs[start : start + limit], len(ordered_jobs)
 

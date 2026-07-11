@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+
     # OpenAI voice APIs (used for interview text-to-speech and speech-to-text)
     OPENAI_API_KEY: str = ""
     OPENAI_TTS_MODEL: str = "gpt-4o-mini-tts"

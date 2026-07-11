@@ -15,7 +15,7 @@ from app.services.job_service import job_service
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 
-def _job_response(job, company: str, is_booked: bool = False) -> JobResponse:
+def _job_response(job, company: str, is_booked: bool = False, match_score: float | None = None) -> JobResponse:
     return JobResponse(
         id=str(job.id),
         title=job.title,
@@ -32,6 +32,7 @@ def _job_response(job, company: str, is_booked: bool = False) -> JobResponse:
         postedDate=job.posted_date,
         applicationDeadline=job.application_deadline,
         employerId=str(job.employer_id),
+        matchScore=match_score,
         applicantsCount=job.applicants_count,
         status=job.status.value if hasattr(job.status, "value") else job.status,
         isBooked=is_booked,
@@ -87,7 +88,7 @@ async def get_recommended_jobs(
 ):
     rows, total = await job_service.get_recommended(db, user.id, page=page, limit=limit)
     return PaginatedResponse(
-        data=[_job_response(job, company or "") for job, company in rows],
+        data=[_job_response(job, company or "", False, score) for job, company, score in rows],
         total=total,
         page=page,
         limit=limit,

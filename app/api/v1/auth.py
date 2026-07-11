@@ -7,6 +7,7 @@ from app.models.user import User
 from app.schemas.auth import (
     AuthResponse,
     AuthUserResponse,
+    GoogleLoginRequest,
     LoginRequest,
     RefreshRequest,
     RefreshResponse,
@@ -44,6 +45,18 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/login", response_model=SuccessResponse[AuthResponse])
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     user, token, refresh_token = await auth_service.login(db, payload.email, payload.password)
+    return SuccessResponse(
+        data=AuthResponse(
+            user=_user_response(user),
+            token=token,
+            refreshToken=refresh_token,
+        )
+    )
+
+
+@router.post("/google", response_model=SuccessResponse[AuthResponse])
+async def google_login(payload: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+    user, token, refresh_token = await auth_service.google_login(db, payload)
     return SuccessResponse(
         data=AuthResponse(
             user=_user_response(user),
