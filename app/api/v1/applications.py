@@ -8,9 +8,17 @@ from app.api.deps import get_current_user, require_role
 from app.core.enums import UserRole
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.application import ApplicationCounts, ApplicationCreate, ApplicationListResponse, ApplicationResponse, ApplicationStatusUpdate
+from app.schemas.application import (
+    ApplicationApplyResponse,
+    ApplicationCounts,
+    ApplicationCreate,
+    ApplicationListResponse,
+    ApplicationResponse,
+    ApplicationStatusUpdate,
+)
+from app.schemas.interview import InterviewResponse
 from app.schemas.common import SuccessResponse
-from app.services.application_service import application_service
+from app.services.application_service import INTERVIEW_MATCH_THRESHOLD, application_service
 from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
@@ -33,6 +41,29 @@ def _app_response(app) -> ApplicationResponse:
         rejectionReason=app.rejection_reason,
         createdAt=app.created_at.isoformat(),
         updatedAt=app.updated_at.isoformat(),
+    )
+
+
+def _interview_response(interview) -> InterviewResponse:
+    return InterviewResponse(
+        id=str(interview.id),
+        jobId=str(interview.job_id),
+        applicationId=str(interview.application_id),
+        jobTitle=interview.job_title,
+        company=interview.company,
+        applicantId=str(interview.applicant_id),
+        applicantName=interview.applicant_name,
+        scheduledDate=interview.scheduled_date,
+        scheduledTime=interview.scheduled_time,
+        duration=interview.duration,
+        status=interview.status.value if hasattr(interview.status, "value") else interview.status,
+        type=interview.type.value if hasattr(interview.type, "value") else interview.type,
+        meetingLink=interview.meeting_link,
+        notes=interview.notes,
+        aiScore=interview.ai_score,
+        aiSummary=interview.ai_summary,
+        createdAt=interview.created_at.isoformat(),
+        updatedAt=interview.updated_at.isoformat(),
     )
 
 
@@ -61,14 +92,21 @@ async def list_applications(
     )
 
 
-@router.post("", status_code=201, response_model=SuccessResponse[ApplicationResponse])
+@router.post("", status_code=201, response_model=SuccessResponse[ApplicationApplyResponse])
 async def create_application(
     payload: ApplicationCreate,
     applicant: User = Depends(require_role(UserRole.JOB_SEEKER)),
     db: AsyncSession = Depends(get_db),
 ):
-    app = await application_service.create(db, applicant, payload)
-    return SuccessResponse(data=_app_response(app))
+    app, interview = await application_service.create(db, applicant, payload)
+    return SuccessResponse(
+        data=ApplicationApplyResponse(
+            application=_app_response(app),
+            interview=_interview_response(interview) if interview else None,
+            eligibleForInterview=interview is not None,
+            interviewThreshold=INTERVIEW_MATCH_THRESHOLD,
+        )
+    )
 
 
 @router.patch("/{app_id}/status", response_model=SuccessResponse[ApplicationResponse])

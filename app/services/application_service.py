@@ -1,16 +1,20 @@
+import asyncio
 import uuid
 from datetime import date
+from math import sqrt
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import ApplicationStatus, JobStatus
+from app.core.enums import ApplicationStatus, InterviewStatus, InterviewType, JobStatus
 from app.core.exceptions import ConflictException, InvalidTransitionException, NotFoundException
+from app.models.interview import Interview
 from app.models.application import Application
 from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.application import ApplicationCreate, ApplicationStatusUpdate
+from app.vectordb.embeddings import build_job_text, build_profile_text, embed_text
 
 VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.PENDING: {ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED},
@@ -18,9 +22,100 @@ VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.INTERVIEW_SCHEDULED: {ApplicationStatus.HIRED, ApplicationStatus.REJECTED},
 }
 
+INTERVIEW_MATCH_THRESHOLD = 65.0
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float | None:
+    if not left or not right or len(left) != len(right):
+        return None
+    numerator = sum(a * b for a, b in zip(left, right))
+    left_norm = sqrt(sum(value * value for value in left))
+    right_norm = sqrt(sum(value * value for value in right))
+    if left_norm == 0 or right_norm == 0:
+        return None
+    return numerator / (left_norm * right_norm)
+
+
+def _heuristic_match_score(profile: Profile | None, job: Job) -> float:
+    profile_text = " ".join(
+        part
+        for part in [
+            profile.title if profile else None,
+            profile.experience if profile else None,
+            profile.preferred_role if profile else None,
+            profile.bio if profile else None,
+            " ".join(profile.skills or []) if profile and profile.skills else None,
+            " ".join(profile.certifications or []) if profile and profile.certifications else None,
+            build_profile_text(profile) if profile else None,
+        ]
+        if part
+    ).lower()
+    job_text = " ".join(
+        part
+        for part in [
+            job.title,
+            job.description,
+            " ".join(job.requirements or []),
+            " ".join(job.responsibilities or []),
+            " ".join(job.benefits or []),
+            build_job_text(job),
+        ]
+        if part
+    ).lower()
+
+    if not profile_text or not job_text:
+        return 0.0
+
+    profile_words = set(profile_text.replace("/", " ").replace("-", " ").split())
+    job_words = set(job_text.replace("/", " ").replace("-", " ").split())
+    shared = len(profile_words & job_words)
+    score = min(100.0, round((shared / max(1, len(job_words))) * 300.0, 2))
+    return score
+
 
 class ApplicationService:
-    async def create(self, db: AsyncSession, applicant: User, data: ApplicationCreate) -> Application:
+    async def _score_application(self, profile: Profile | None, job: Job) -> float:
+        if not profile:
+            return 0.0
+
+        try:
+            profile_text = build_profile_text(profile)
+            job_text = build_job_text(job)
+            profile_vec, job_vec = await asyncio.gather(embed_text(profile_text), embed_text(job_text))
+            similarity = _cosine_similarity(profile_vec, job_vec)
+            if similarity is not None:
+                return round(max(0.0, similarity) * 100.0, 2)
+        except Exception:
+            pass
+
+        return _heuristic_match_score(profile, job)
+
+    async def _create_auto_interview(
+        self,
+        db: AsyncSession,
+        *,
+        job: Job,
+        company: str,
+        application: Application,
+    ) -> Interview:
+        interview = Interview(
+            id=uuid.uuid4(),
+            job_id=job.id,
+            application_id=application.id,
+            applicant_id=application.applicant_id,
+            job_title=job.title,
+            company=company or "",
+            applicant_name=application.applicant_name,
+            scheduled_date=date.today().isoformat(),
+            scheduled_time="00:00",
+            duration=30,
+            status=InterviewStatus.SCHEDULED,
+            type=InterviewType.AI,
+        )
+        db.add(interview)
+        return interview
+
+    async def create(self, db: AsyncSession, applicant: User, data: ApplicationCreate) -> tuple[Application, Interview | None]:
         job_id = uuid.UUID(data.jobId)
 
         # Get job + company from employer profile
@@ -36,6 +131,9 @@ class ApplicationService:
         job, company = row
         if job.status != JobStatus.ACTIVE:
             raise NotFoundException("Job not found or closed")
+
+        profile_stmt = select(Profile).where(Profile.user_id == applicant.id)
+        profile = (await db.execute(profile_stmt)).scalar_one_or_none()
 
         # Check duplicate
         stmt = select(Application).where(
@@ -60,11 +158,23 @@ class ApplicationService:
         )
         db.add(application)
 
+        application.match_score = await self._score_application(profile, job)
+
+        interview: Interview | None = None
+        if application.match_score >= INTERVIEW_MATCH_THRESHOLD:
+            application.status = ApplicationStatus.INTERVIEW_SCHEDULED
+            interview = await self._create_auto_interview(
+                db,
+                job=job,
+                company=company or "",
+                application=application,
+            )
+
         # Increment applicants count
         job.applicants_count += 1
 
         await db.flush()
-        return application
+        return application, interview
 
     async def list_applications(
         self,

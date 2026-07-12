@@ -3,6 +3,7 @@ from datetime import date
 from pydantic import BaseModel
 
 from app.core.enums import ApplicationStatus
+from app.schemas.interview import InterviewResponse
 from app.schemas.common import PaginatedResponse
 
 
@@ -48,3 +49,10 @@ class ApplicationCounts(BaseModel):
 
 class ApplicationListResponse(PaginatedResponse[ApplicationResponse]):
     counts: ApplicationCounts | None = None
+
+
+class ApplicationApplyResponse(BaseModel):
+    application: ApplicationResponse
+    interview: InterviewResponse | None = None
+    eligibleForInterview: bool = False
+    interviewThreshold: float | None = None
