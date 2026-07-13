@@ -10,6 +10,7 @@ compose() {
 
 ./deploy/scripts/render-nginx.sh http
 compose up -d nginx
+compose exec nginx nginx -s reload
 
 compose run --rm certbot certonly \
   --webroot \
