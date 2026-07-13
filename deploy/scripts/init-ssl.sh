@@ -9,8 +9,7 @@ compose() {
 }
 
 ./deploy/scripts/render-nginx.sh http
-compose up -d nginx
-compose exec nginx nginx -s reload
+compose up -d --force-recreate nginx
 
 compose run --rm certbot certonly \
   --webroot \
@@ -21,5 +20,5 @@ compose run --rm certbot certonly \
   -d "$DOMAIN"
 
 ./deploy/scripts/render-nginx.sh https
-compose up -d nginx
+compose up -d --force-recreate nginx
 compose exec nginx nginx -s reload

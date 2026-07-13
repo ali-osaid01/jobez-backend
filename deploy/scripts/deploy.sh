@@ -20,6 +20,7 @@ compose build backend
 compose up -d postgres chromadb
 compose run --rm backend alembic upgrade head
 compose up -d
+compose up -d --force-recreate nginx
 compose exec nginx nginx -s reload
 
 compose ps
