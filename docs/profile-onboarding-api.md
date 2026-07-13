@@ -8,7 +8,7 @@
 
 **`POST /profile/resume/extract`**
 
-Uploads the resume to Cloudinary, then sends it to Gemini OCR to extract structured fields for auto-filling the onboarding form.
+Uploads the PDF resume, then sends it to OpenAI to extract structured fields for auto-filling the onboarding form.
 
 **Auth:** Bearer token
 **Role:** job-seeker
@@ -16,7 +16,7 @@ Uploads the resume to Cloudinary, then sends it to Gemini OCR to extract structu
 
 ### Request
 
-FormData with `file` field (PDF, DOC, DOCX — max 5MB)
+FormData with `file` field (PDF only — max 5MB)
 
 ```typescript
 const formData = new FormData();
@@ -86,7 +86,7 @@ const response = await fetch("/api/v1/profile/resume/extract", {
 - All fields are optional in the response — returns `null` for fields that couldn't be extracted
 - The frontend should pre-fill the form with returned data; user can edit before submitting
 - The original resume file is also uploaded and stored — `resumeUrl` is returned
-- If `GEMINI_API_KEY` is not configured, returns empty/null fields with `resumeUrl` still populated
+- If `OPENAI_API_KEY` is not configured, returns empty/null fields with `resumeUrl` still populated
 
 ### Errors
 
@@ -111,7 +111,7 @@ Just uploads and stores the resume, no AI extraction.
 
 ### Request
 
-FormData with `file` field (PDF, DOC, DOCX — max 5MB)
+FormData with `file` field (PDF only — max 5MB)
 
 ### Success Response — `200 OK`
 
@@ -319,7 +319,7 @@ Employer Onboarding:
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `POST` | `/profile/resume/extract` | Upload resume + Gemini AI parse → structured JSON |
+| `POST` | `/profile/resume/extract` | Upload PDF resume + OpenAI parse → structured JSON |
 | `POST` | `/profile/resume` | Upload resume only (no parsing) |
 | `PATCH` | `/profile/me` | Save onboarding data + set `onboardingComplete: true` |
 | `GET` | `/profile/me` | Get current user's profile |

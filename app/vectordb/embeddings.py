@@ -1,28 +1,47 @@
 """Embedding utilities for semantic job recommendation.
 
-- embed_text: calls Gemini text-embedding-004, returns list[float]
+- embed_text: calls OpenAI embeddings, returns list[float]
 - build_job_text: builds embeddable text document from a Job
 - build_profile_text: builds embeddable text document from a Profile
 """
 
+import httpx
 import structlog
 
-from app.llm.client import get_gemini_client
+from app.config import get_settings
 
 logger = structlog.get_logger()
 
 
 async def embed_text(text: str) -> list[float]:
-    """Embed text via Gemini text-embedding-004. Returns [] if Gemini is not configured."""
-    client = get_gemini_client()
-    if client is None:
-        logger.warning("embed_text_skipped", reason="GEMINI_API_KEY not set")
+    """Embed text via OpenAI. Returns [] if OpenAI is not configured or unavailable."""
+    settings = get_settings()
+    if not settings.OPENAI_API_KEY:
+        logger.warning("embed_text_skipped", reason="OPENAI_API_KEY not set")
         return []
-    result = await client.aio.models.embed_content(
-        model="text-embedding-004",
-        contents=text,
-    )
-    return result.embeddings[0].values
+
+    payload = {
+        "model": settings.OPENAI_EMBEDDING_MODEL,
+        "input": text,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/embeddings",
+                headers={
+                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        response.raise_for_status()
+        data = response.json().get("data", [])
+        if not data:
+            return []
+        return data[0].get("embedding", []) or []
+    except Exception as exc:
+        logger.error("openai_embedding_failed", error=str(exc))
+        return []
 
 
 def build_job_text(job) -> str:

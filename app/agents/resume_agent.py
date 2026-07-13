@@ -1,66 +1,83 @@
-"""Agent for parsing resumes using Gemini vision/OCR.
+"""Agent for parsing PDF resumes using OpenAI."""
 
-Sends the raw file bytes to Gemini which can read PDFs, DOCs, etc.
-"""
-
+import base64
 import json
 
+import httpx
 import structlog
-from google.genai import types
 
 from app.config import get_settings
-from app.llm.client import get_gemini_client
+from app.llm.client import _extract_response_text
 from app.prompts.resume_parse import build_resume_parse_prompt
 
 logger = structlog.get_logger()
 
-MIME_MAP = {
-    "pdf": "application/pdf",
-    "doc": "application/msword",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-
 
 class ResumeAgent:
     async def parse_resume(self, file_bytes: bytes, file_ext: str) -> dict:
-        """Parse resume using Gemini vision. Returns structured data dict."""
-        settings = get_settings()
-        client = get_gemini_client()
-
-        if client is None:
-            logger.warning("gemini_not_configured", msg="Returning stub data")
+        """Parse a PDF resume with OpenAI and return structured profile fields."""
+        if file_ext.lower() != "pdf":
+            logger.warning("resume_parse_rejected_non_pdf", file_ext=file_ext)
             return self._stub_response()
 
-        mime_type = MIME_MAP.get(file_ext, "application/pdf")
+        settings = get_settings()
+        if not settings.OPENAI_API_KEY:
+            logger.warning("openai_not_configured", msg="Returning stub resume data")
+            return self._stub_response()
+
         prompt = build_resume_parse_prompt()
+        encoded_pdf = base64.b64encode(file_bytes).decode("ascii")
+        payload = {
+            "model": settings.OPENAI_RESUME_MODEL,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_file",
+                            "filename": "resume.pdf",
+                            "file_data": f"data:application/pdf;base64,{encoded_pdf}",
+                        },
+                        {
+                            "type": "input_text",
+                            "text": prompt,
+                        },
+                    ],
+                }
+            ],
+        }
 
         try:
-            response = await client.aio.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                            types.Part.from_text(text=prompt),
-                        ],
-                    )
-                ],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                ),
-            )
-
-            result = json.loads(response.text)
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={
+                        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            response.raise_for_status()
+            raw = _extract_response_text(response.json())
+            result = json.loads(self._strip_json_markdown(raw))
             logger.info("resume_parsed_successfully", fields=list(result.keys()))
             return result
 
-        except json.JSONDecodeError as e:
-            logger.error("resume_parse_json_error", error=str(e), raw=response.text[:300])
+        except json.JSONDecodeError as exc:
+            logger.error("resume_parse_json_error", error=str(exc))
             return self._stub_response()
-        except Exception as e:
-            logger.error("resume_parse_failed", error=str(e))
+        except Exception as exc:
+            logger.error("resume_parse_failed", error=str(exc))
             return self._stub_response()
+
+    def _strip_json_markdown(self, raw: str) -> str:
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.split("\n", 1)[1] if "\n" in stripped else stripped[3:]
+            if stripped.endswith("```"):
+                stripped = stripped[:-3]
+            stripped = stripped.strip()
+        return stripped
 
     def _stub_response(self) -> dict:
         return {

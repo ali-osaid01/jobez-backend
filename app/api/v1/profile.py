@@ -13,7 +13,7 @@ from app.services.storage_service import storage_service
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
-ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
+ALLOWED_EXTENSIONS = {"pdf"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
@@ -53,7 +53,7 @@ def _validate_file(file: UploadFile) -> str:
         raise ValidationError("No file provided")
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in ALLOWED_EXTENSIONS:
-        raise ValidationError(f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
+        raise ValidationError("Unsupported file type. Please upload a PDF resume.")
     return ext
 
 
@@ -102,7 +102,7 @@ async def extract_resume(
     user: User = Depends(require_role(UserRole.JOB_SEEKER)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload resume, parse with Gemini OCR, and return structured fields."""
+    """Upload PDF resume, parse with OpenAI, and return structured fields."""
     ext = _validate_file(file)
     contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
@@ -113,7 +113,7 @@ async def extract_resume(
     url, public_id = await storage_service.upload_resume(file)
     await profile_service.update_resume(db, user.id, url, public_id)
 
-    # Parse with Gemini
+    # Parse with OpenAI
     from app.agents.resume_agent import resume_agent
 
     parsed = await resume_agent.parse_resume(contents, ext)

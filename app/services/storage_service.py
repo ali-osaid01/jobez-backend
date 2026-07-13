@@ -13,7 +13,7 @@ from app.core.exceptions import ValidationError
 
 logger = structlog.get_logger()
 
-RESUME_EXTENSIONS = {"pdf", "doc", "docx"}
+RESUME_EXTENSIONS = {"pdf"}
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 MAX_RESUME_SIZE = 10 * 1024 * 1024
 MAX_IMAGE_SIZE = 5 * 1024 * 1024

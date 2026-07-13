@@ -10,7 +10,7 @@ from app.core.exceptions import ValidationError
 
 logger = structlog.get_logger()
 
-ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
+ALLOWED_EXTENSIONS = {"pdf"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 

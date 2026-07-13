@@ -20,15 +20,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Gemini (optional — AI features are stubbed)
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.5-flash"
-
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
 
-    # OpenAI voice APIs (used for interview text-to-speech and speech-to-text)
+    # OpenAI APIs
     OPENAI_API_KEY: str = ""
+    OPENAI_TEXT_MODEL: str = "gpt-4o-mini"
+    OPENAI_RESUME_MODEL: str = "gpt-4o-mini"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_TTS_MODEL: str = "gpt-4o-mini-tts"
     OPENAI_STT_MODEL: str = "gpt-4o-mini-transcribe"
     OPENAI_TTS_VOICE: str = "alloy"

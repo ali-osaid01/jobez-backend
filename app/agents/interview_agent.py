@@ -29,7 +29,7 @@ class InterviewAgent:
         prompt = build_question_prompt(candidate_profile, job, difficulty)
         raw = await generate(prompt)
 
-        # Strip markdown code fences if Gemini wraps the JSON
+        # Strip markdown code fences if the model wraps the JSON.
         stripped = raw.strip()
         if stripped.startswith("```"):
             stripped = stripped.split("\n", 1)[1] if "\n" in stripped else stripped[3:]
@@ -53,7 +53,7 @@ class InterviewAgent:
         return self._fallback_questions(job.get("title", "the position"), difficulty)
 
     def _fallback_questions(self, job_title: str, difficulty: str) -> list[dict]:
-        """Safe fallback if Gemini is unavailable or returns unparseable output."""
+        """Safe fallback if OpenAI is unavailable or returns unparseable output."""
         return [
             {"id": "q1", "question": f"Walk me through your most relevant technical project for a {job_title} role.", "type": "technical", "category": "Experience", "expectedDuration": 150},
             {"id": "q2", "question": "How would you approach the main technical challenge in this job, and why?", "type": "technical", "category": "System Design", "expectedDuration": 150},
