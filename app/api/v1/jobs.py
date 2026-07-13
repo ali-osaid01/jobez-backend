@@ -96,6 +96,23 @@ async def get_recommended_jobs(
     )
 
 
+@router.get("/saved", response_model=PaginatedResponse[JobResponse])
+async def get_saved_jobs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    user: User = Depends(require_role(UserRole.JOB_SEEKER)),
+    db: AsyncSession = Depends(get_db),
+):
+    rows, total = await job_service.get_saved(db, user.id, page=page, limit=limit)
+    return PaginatedResponse(
+        data=[_job_response(job, company or "", bool(is_booked)) for job, company, is_booked in rows],
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=math.ceil(total / limit) if total > 0 else 0,
+    )
+
+
 @router.get("/{job_id}", response_model=SuccessResponse[JobResponse])
 async def get_job(
     job_id: uuid.UUID,

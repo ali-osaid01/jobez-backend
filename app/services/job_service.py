@@ -292,5 +292,27 @@ class JobService:
         start = (page - 1) * limit
         return ordered_jobs[start : start + limit], len(ordered_jobs)
 
+    async def get_saved(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        *,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[tuple[Job, str, bool]], int]:
+        stmt = (
+            select(Job, Profile.company, literal(True).label("is_booked"))
+            .join(Bookmark, Bookmark.job_id == Job.id)
+            .join(Profile, Profile.user_id == Job.employer_id)
+            .where(Bookmark.user_id == user_id)
+            .order_by(Bookmark.created_at.desc())
+        )
+
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await db.execute(count_stmt)).scalar_one()
+
+        result = await db.execute(stmt.offset((page - 1) * limit).limit(limit))
+        return list(result.all()), total
+
 
 job_service = JobService()
