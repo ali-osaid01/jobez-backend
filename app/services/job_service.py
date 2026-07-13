@@ -13,6 +13,7 @@ from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.job import JobCreate, JobUpdate
+from app.services.matching import candidate_job_gate
 from app.vectordb.collections import get_jobs_collection, get_resumes_collection
 from app.vectordb.embeddings import build_job_text, embed_text
 
@@ -229,6 +230,12 @@ class JobService:
         page: int = 1,
         limit: int = 20,
     ) -> tuple[list[tuple[Job, str, float | None]], int]:
+        profile_stmt = select(Profile).where(Profile.user_id == user_id)
+        profile = (await db.execute(profile_stmt)).scalar_one_or_none()
+        if not profile:
+            logger.info("recommended_empty_no_profile", user_id=str(user_id))
+            return [], 0
+
         # Try to fetch user's profile embedding from ChromaDB
         user_vec: list[float] | None = None
         try:
@@ -284,6 +291,8 @@ class JobService:
             if score is None or score < 35.0:
                 continue
             job, company = jobs_by_id[jid]
+            if not candidate_job_gate(profile, job):
+                continue
             ordered_jobs.append((job, company, score))
 
         if not ordered_jobs:

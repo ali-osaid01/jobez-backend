@@ -2,11 +2,13 @@ import math
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
 from app.core.enums import UserRole
 from app.db.session import get_db
+from app.models.interview import Interview
 from app.models.user import User
 from app.schemas.application import (
     ApplicationApplyResponse,
@@ -24,7 +26,7 @@ from app.services.storage_service import storage_service
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
 
-def _app_response(app) -> ApplicationResponse:
+def _app_response(app, latest_interview: Interview | None = None) -> ApplicationResponse:
     return ApplicationResponse(
         id=str(app.id),
         jobId=str(app.job_id),
@@ -39,6 +41,11 @@ def _app_response(app) -> ApplicationResponse:
         coverLetter=app.cover_letter,
         matchScore=app.match_score,
         rejectionReason=app.rejection_reason,
+        latestInterviewId=str(latest_interview.id) if latest_interview else None,
+        latestInterviewStatus=(
+            latest_interview.status.value if latest_interview and hasattr(latest_interview.status, "value")
+            else latest_interview.status if latest_interview else None
+        ),
         createdAt=app.created_at.isoformat(),
         updatedAt=app.updated_at.isoformat(),
     )
@@ -80,10 +87,21 @@ async def list_applications(
     apps, total = await application_service.list_applications(
         db, user, page=page, limit=limit, status=status, job_id=jobId, search=search
     )
+    latest_interviews: dict[uuid.UUID, Interview] = {}
+    app_ids = [app.id for app in apps]
+    if app_ids:
+        result = await db.execute(
+            select(Interview)
+            .where(Interview.application_id.in_(app_ids))
+            .order_by(Interview.application_id, Interview.created_at.desc())
+        )
+        for interview in result.scalars().all():
+            latest_interviews.setdefault(interview.application_id, interview)
+
     raw = await application_service.get_status_counts(db, user, job_id=jobId, search=search)
     counts = ApplicationCounts(**raw)
     return ApplicationListResponse(
-        data=[_app_response(a) for a in apps],
+        data=[_app_response(a, latest_interviews.get(a.id)) for a in apps],
         total=total,
         page=page,
         limit=limit,

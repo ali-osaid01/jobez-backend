@@ -11,6 +11,8 @@ class InterviewCreate(BaseModel):
     scheduledTime: str
     duration: int = 30
     type: InterviewType
+    meetingLink: str | None = None
+    notes: str | None = None
 
 
 class InterviewUpdate(BaseModel):

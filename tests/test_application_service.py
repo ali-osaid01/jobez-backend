@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.exceptions import ValidationError
 from app.core.enums import (
     ApplicationStatus,
     ExperienceLevel,
@@ -99,6 +100,16 @@ def _build_profile() -> Profile:
     )
 
 
+def _build_social_media_job() -> Job:
+    job = _build_job()
+    job.title = "Social Media Manager"
+    job.description = "Create social campaigns, manage Instagram content, and report engagement metrics."
+    job.requirements = ["Social media strategy", "Content calendar", "Instagram analytics"]
+    job.responsibilities = ["Plan posts", "Coordinate campaigns"]
+    job.benefits = ["Flexible hours"]
+    return job
+
+
 @pytest.mark.asyncio
 async def test_create_auto_schedules_interview_for_high_match(monkeypatch):
     service = ApplicationService()
@@ -189,3 +200,32 @@ async def test_create_keeps_application_pending_for_low_match(monkeypatch):
     assert application.match_score == INTERVIEW_MATCH_THRESHOLD - 10
     assert created_interview is None
     create_auto_interview.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_blocks_low_relevance_application_before_saving(monkeypatch):
+    service = ApplicationService()
+    job = _build_social_media_job()
+    profile = _build_profile()
+    applicant = SimpleNamespace(
+        id=profile.user_id,
+        name=profile.name,
+        email=profile.email,
+        role=UserRole.JOB_SEEKER,
+    )
+    fake_db = FakeSession(
+        [
+            FakeResult(row=(job, "Acme")),
+            FakeResult(scalar=profile),
+        ]
+    )
+    score_application = AsyncMock(return_value=90)
+    monkeypatch.setattr(service, "_score_application", score_application)
+
+    with pytest.raises(ValidationError):
+        await service.create(fake_db, applicant, ApplicationCreate(jobId=str(job.id)))
+
+    assert fake_db.added == []
+    assert fake_db.flushed is False
+    assert job.applicants_count == 0
+    score_application.assert_not_awaited()

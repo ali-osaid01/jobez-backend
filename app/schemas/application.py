@@ -32,6 +32,8 @@ class ApplicationResponse(BaseModel):
     coverLetter: str | None = None
     matchScore: float | None = None
     rejectionReason: str | None = None
+    latestInterviewId: str | None = None
+    latestInterviewStatus: str | None = None
     createdAt: str
     updatedAt: str
 

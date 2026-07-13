@@ -72,14 +72,14 @@ INTERVIEW_SCHEDULED → HIRED | REJECTED
 **Config:** `app/config.py` uses `pydantic-settings` with `.env` file. Access via `get_settings()` (LRU-cached singleton).
 
 **AI features:**
-- `app/llm/client.py` — Gemini client singleton with tenacity retry logic. Falls back to a stub JSON response when `GEMINI_API_KEY` is unset.
-- `app/agents/` — three agents: `InterviewAgent` (question generation + response evaluation, fully wired), `JobMatchAgent` (candidate-job fit scoring, wired), `ResumeAgent` (PDF/DOC parsing via Gemini vision, wired).
+- `app/llm/client.py` — OpenAI Responses API client singleton with tenacity retry logic. Falls back to a stub JSON response when `OPENAI_API_KEY` is unset.
+- `app/agents/` — three agents: `InterviewAgent` (question generation + response evaluation, fully wired), `JobMatchAgent` (candidate-job fit scoring, wired), `ResumeAgent` (PDF parsing via OpenAI file input, wired).
 - `app/prompts/` — prompt builders for each agent (`interview_question.py`, `interview_evaluation.py`, `job_match.py`, `resume_parse.py`).
 - `app/tasks/scoring.py` — background task for batch match scoring; currently a stub (does not call agents yet).
 
 **Vector store:** ChromaDB HTTP client in `app/vectordb/`. Two collections: `jobs` and `resumes`, both using cosine similarity. Access via `get_jobs_collection()` / `get_resumes_collection()` — never construct `Collection` objects directly. In Docker: `CHROMA_HOST=chromadb, CHROMA_PORT=8000`; local dev defaults to `localhost:8001`.
 
-**File uploads:** Cloudinary via `app/services/cloudinary_service.py`. Resume uploads (PDF/DOC/DOCX, max 10 MB) stored under `jobez/resumes/`. Configured lazily on first use via `CLOUDINARY_*` env vars.
+**File uploads:** Cloudinary via `app/services/cloudinary_service.py`. Resume uploads (PDF only, max 10 MB) stored under `jobez/resumes/`. Configured lazily on first use via `CLOUDINARY_*` env vars.
 
 **Logging:** `structlog` throughout. Configure with `configure_logging(debug=...)` in lifespan. All log calls use `structlog.get_logger()` — never use the stdlib `logging` directly.
 

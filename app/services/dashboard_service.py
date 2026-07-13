@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import ApplicationStatus, InterviewStatus, JobStatus
 from app.models.application import Application
+from app.models.bookmark import Bookmark
 from app.models.interview import Interview
 from app.models.job import Job
 from app.models.user import User
@@ -22,12 +23,36 @@ class DashboardService:
         ).scalar_one()
 
         # Scheduled interviews
-        scheduled = (
+        interview_scheduled = (
             await db.execute(
                 select(func.count()).where(
                     Interview.applicant_id == user_id,
                     Interview.status == InterviewStatus.SCHEDULED.value,
                 )
+            )
+        ).scalar_one()
+
+        pending_applications = (
+            await db.execute(
+                select(func.count()).where(
+                    Application.applicant_id == user_id,
+                    Application.status == ApplicationStatus.PENDING.value,
+                )
+            )
+        ).scalar_one()
+
+        shortlisted_applications = (
+            await db.execute(
+                select(func.count()).where(
+                    Application.applicant_id == user_id,
+                    Application.status == ApplicationStatus.SHORTLISTED.value,
+                )
+            )
+        ).scalar_one()
+
+        saved_jobs = (
+            await db.execute(
+                select(func.count()).where(Bookmark.user_id == user_id)
             )
         ).scalar_one()
 
@@ -63,8 +88,12 @@ class DashboardService:
 
         return {
             "totalApplications": total_apps,
-            "scheduledInterviews": scheduled,
-            "profileViews": 0,  # Stub
+            "pendingApplications": pending_applications,
+            "shortlistedApplications": shortlisted_applications,
+            "interviewsScheduled": interview_scheduled,
+            "scheduledInterviews": interview_scheduled,
+            "savedJobs": saved_jobs,
+            "profileViews": 0,
             "recentApplications": recent_apps,
             "upcomingInterviews": upcoming,
             "recommendedJobs": recommended,
@@ -79,6 +108,12 @@ class DashboardService:
                 select(func.count()).where(
                     Job.employer_id == employer_id, Job.status == JobStatus.ACTIVE.value
                 )
+            )
+        ).scalar_one()
+
+        total_jobs = (
+            await db.execute(
+                select(func.count()).where(Job.employer_id == employer_id)
             )
         ).scalar_one()
 
@@ -101,6 +136,18 @@ class DashboardService:
                 .where(
                     Job.employer_id == employer_id,
                     Application.status == ApplicationStatus.SHORTLISTED.value,
+                )
+            )
+        ).scalar_one()
+
+        interview_scheduled = (
+            await db.execute(
+                select(func.count())
+                .select_from(Interview)
+                .join(Job)
+                .where(
+                    Job.employer_id == employer_id,
+                    Interview.status == InterviewStatus.SCHEDULED.value,
                 )
             )
         ).scalar_one()
@@ -154,9 +201,14 @@ class DashboardService:
         recent_applicants = list(recent_result.scalars().all())
 
         return {
+            "totalJobs": total_jobs,
             "activeJobs": active_jobs,
+            "totalApplications": total_applicants,
             "totalApplicants": total_applicants,
+            "shortlistedApplications": shortlisted,
             "shortlisted": shortlisted,
+            "hiredCandidates": pipeline_statuses.get(ApplicationStatus.HIRED.value, 0),
+            "interviewScheduled": interview_scheduled,
             "contacted": 0,  # Stub
             "pipeline": {
                 "applied": total_applicants,

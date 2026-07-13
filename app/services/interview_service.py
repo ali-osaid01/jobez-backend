@@ -60,6 +60,8 @@ class InterviewService:
             duration=data.duration,
             status=InterviewStatus.SCHEDULED,
             type=data.type,
+            meeting_link=data.meetingLink,
+            notes=data.notes,
         )
         db.add(interview)
 
@@ -95,7 +97,7 @@ class InterviewService:
             stmt = stmt.join(Job).where(Job.employer_id == user.id)
 
         if status:
-            stmt = stmt.where(Interview.status == status)
+            stmt = stmt.where(Interview.status == InterviewStatus(status))
         if interview_type:
             stmt = stmt.where(Interview.type == interview_type)
 
@@ -159,6 +161,9 @@ class InterviewService:
         interview = await self.get_by_id(db, interview_id)
         if interview.applicant_id != user_id:
             raise ForbiddenException("You can only start your own interviews")
+
+        if InterviewStatus(interview.status) == InterviewStatus.COMPLETED:
+            return interview
 
         # Idempotent — if questions already generated, just resume
         if interview.questions:

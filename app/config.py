@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_TTS_MODEL: str = "gpt-4o-mini-tts"
     OPENAI_STT_MODEL: str = "gpt-4o-mini-transcribe"
-    OPENAI_TTS_VOICE: str = "alloy"
+    OPENAI_TTS_VOICE: str = "nova"
 
     # Cloudinary
     CLOUDINARY_CLOUD_NAME: str = ""

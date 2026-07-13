@@ -7,13 +7,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import ApplicationStatus, InterviewStatus, InterviewType, JobStatus
-from app.core.exceptions import ConflictException, InvalidTransitionException, NotFoundException
+from app.core.exceptions import ConflictException, InvalidTransitionException, NotFoundException, ValidationError
 from app.models.interview import Interview
 from app.models.application import Application
 from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.application import ApplicationCreate, ApplicationStatusUpdate
+from app.services.matching import candidate_job_gate
 from app.vectordb.embeddings import build_job_text, build_profile_text, embed_text
 
 VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
@@ -134,6 +135,11 @@ class ApplicationService:
 
         profile_stmt = select(Profile).where(Profile.user_id == applicant.id)
         profile = (await db.execute(profile_stmt)).scalar_one_or_none()
+
+        if not candidate_job_gate(profile, job):
+            raise ValidationError(
+                "This job does not match your current profile skills or role. Update your profile or apply to a more relevant job."
+            )
 
         # Check duplicate
         stmt = select(Application).where(
