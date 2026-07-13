@@ -1,10 +1,15 @@
+import uuid
+
 from fastapi import APIRouter, Depends, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
 from app.core.enums import UserRole
-from app.core.exceptions import ValidationError
+from app.core.exceptions import NotFoundException, ValidationError
 from app.db.session import get_db
+from app.models.application import Application
+from app.models.job import Job
 from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.profile import ProfileResponse, ProfileUpdateRequest, ResumeExtractResponse
@@ -74,6 +79,30 @@ async def update_my_profile(
 ):
     profile = await profile_service.update(db, user, payload)
     return SuccessResponse(data=_profile_response(profile, user), message="Profile updated successfully")
+
+
+@router.get("/candidates/{user_id}", response_model=SuccessResponse[ProfileResponse])
+async def get_candidate_profile(
+    user_id: uuid.UUID,
+    employer: User = Depends(require_role(UserRole.EMPLOYER)),
+    db: AsyncSession = Depends(get_db),
+):
+    access_result = await db.execute(
+        select(Application.id)
+        .join(Job, Job.id == Application.job_id)
+        .where(Application.applicant_id == user_id, Job.employer_id == employer.id)
+        .limit(1)
+    )
+    if access_result.scalar_one_or_none() is None:
+        raise NotFoundException("Candidate")
+
+    profile = await profile_service.get_by_user_id(db, user_id)
+    candidate_result = await db.execute(select(User).where(User.id == user_id))
+    candidate = candidate_result.scalar_one_or_none()
+    if not candidate:
+        raise NotFoundException("Candidate")
+
+    return SuccessResponse(data=_profile_response(profile, candidate))
 
 
 @router.post("/resume", response_model=SuccessResponse[dict])
