@@ -13,7 +13,12 @@ from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.job import JobCreate, JobUpdate
-from app.services.matching import candidate_job_gate
+from app.services.matching import (
+    MIN_APPLY_MATCH_SCORE,
+    MatchResult,
+    explain_candidate_job_match,
+    score_candidate_job_match,
+)
 from app.vectordb.collections import get_jobs_collection, get_resumes_collection
 from app.vectordb.embeddings import build_job_text, embed_text
 
@@ -78,7 +83,18 @@ class JobService:
         stmt = select(Profile.company).where(Profile.user_id == employer_id).limit(1)
         return (await db.execute(stmt)).scalar_one_or_none() or ""
 
-    async def get_by_id(self, db: AsyncSession, job_id: uuid.UUID, user_id: uuid.UUID | None = None) -> tuple[Job, str, bool]:
+    async def _get_job_seeker_profile(self, db: AsyncSession, user_id: uuid.UUID | None) -> Profile | None:
+        if not user_id:
+            return None
+        stmt = select(Profile).where(Profile.user_id == user_id, Profile.role == "job-seeker")
+        return (await db.execute(stmt)).scalar_one_or_none()
+
+    async def get_by_id(
+        self,
+        db: AsyncSession,
+        job_id: uuid.UUID,
+        user_id: uuid.UUID | None = None,
+    ) -> tuple[Job, str, bool, float | None, list[str]]:
         """Returns (Job, company_name, is_booked) by joining employer Profile."""
         if user_id:
             is_booked_col = (
@@ -101,7 +117,13 @@ class JobService:
         row = result.first()
         if not row:
             raise NotFoundException("Job")
-        return row  # (Job, company_str, is_booked)
+        job, company, is_booked = row
+        match = None
+        profile = await self._get_job_seeker_profile(db, user_id)
+        if profile:
+            match_result = await score_candidate_job_match(profile, job)
+            match = (match_result.score, match_result.reasons)
+        return job, company, is_booked, match[0] if match else None, match[1] if match else []
 
     async def list_jobs(
         self,
@@ -118,7 +140,7 @@ class JobService:
         sort_by: str | None = "postedDate",
         sort_order: str | None = "desc",
         user_id: uuid.UUID | None = None,
-    ) -> tuple[list[tuple[Job, str, bool]], int]:
+    ) -> tuple[list[tuple[Job, str, bool, float | None, list[str]]], int]:
         if user_id:
             is_booked_col = (
                 select(Bookmark.id)
@@ -168,7 +190,16 @@ class JobService:
         # Paginate
         stmt = stmt.offset((page - 1) * limit).limit(limit)
         result = await db.execute(stmt)
-        return list(result.all()), total  # list of (Job, company_str)
+        rows = list(result.all())
+        profile = await self._get_job_seeker_profile(db, user_id)
+        if not profile:
+            return [(job, company or "", bool(is_booked), None, []) for job, company, is_booked in rows], total
+
+        scored_rows: list[tuple[Job, str, bool, float | None, list[str]]] = []
+        for job, company, is_booked in rows:
+            match_result = await score_candidate_job_match(profile, job)
+            scored_rows.append((job, company or "", bool(is_booked), match_result.score, match_result.reasons))
+        return scored_rows, total
 
     async def update(self, db: AsyncSession, job_id: uuid.UUID, employer_id: uuid.UUID, data: JobUpdate) -> tuple[Job, str]:
         job = await self._get_job(db, job_id)
@@ -229,12 +260,29 @@ class JobService:
         *,
         page: int = 1,
         limit: int = 20,
-    ) -> tuple[list[tuple[Job, str, float | None]], int]:
+    ) -> tuple[list[tuple[Job, str, float | None, list[str]]], int]:
         profile_stmt = select(Profile).where(Profile.user_id == user_id)
         profile = (await db.execute(profile_stmt)).scalar_one_or_none()
         if not profile:
             logger.info("recommended_empty_no_profile", user_id=str(user_id))
             return [], 0
+
+        async def fallback_recommendations() -> tuple[list[tuple[Job, str, float | None, list[str]]], int]:
+            stmt = (
+                select(Job, Profile.company)
+                .join(Profile, Profile.user_id == Job.employer_id)
+                .where(Job.status == JobStatus.ACTIVE)
+                .order_by(Job.posted_date.desc())
+            )
+            result = await db.execute(stmt)
+            scored: list[tuple[Job, str, float | None, list[str]]] = []
+            for job, company in result.all():
+                match_result = await score_candidate_job_match(profile, job)
+                if match_result.score >= MIN_APPLY_MATCH_SCORE:
+                    scored.append((job, company or "", match_result.score, match_result.reasons))
+            scored.sort(key=lambda item: item[2] or 0, reverse=True)
+            start = (page - 1) * limit
+            return scored[start : start + limit], len(scored)
 
         # Try to fetch user's profile embedding from ChromaDB
         user_vec: list[float] | None = None
@@ -248,7 +296,7 @@ class JobService:
 
         if not user_vec:
             logger.info("recommended_empty_no_embedding", user_id=str(user_id))
-            return [], 0
+            return await fallback_recommendations()
 
         # Cosine similarity query against jobs collection
         try:
@@ -256,7 +304,7 @@ class JobService:
             collection_count = jobs_collection.count()
             if collection_count <= 0:
                 logger.info("recommended_empty_no_jobs_indexed", user_id=str(user_id))
-                return [], 0
+                return await fallback_recommendations()
             chroma_result = jobs_collection.query(
                 query_embeddings=[user_vec],
                 n_results=collection_count,
@@ -266,7 +314,7 @@ class JobService:
             distances: list[float | None] = chroma_result.get("distances", [[]])[0] if chroma_result.get("distances") else []
         except Exception as exc:
             logger.error("chroma_query_failed", user_id=str(user_id), error=str(exc))
-            return [], 0
+            return await fallback_recommendations()
 
         if not job_id_strs:
             logger.info("recommended_empty_chroma_result", user_id=str(user_id))
@@ -283,17 +331,16 @@ class JobService:
         jobs_by_id: dict[str, tuple[Job, str]] = {str(job.id): (job, company or "") for job, company in rows.all()}
 
         # Return in ChromaDB similarity order, with a minimum score threshold.
-        ordered_jobs: list[tuple[Job, str, float | None]] = []
+        ordered_jobs: list[tuple[Job, str, float | None, list[str]]] = []
         for index, jid in enumerate(job_id_strs):
             if jid not in jobs_by_id:
                 continue
             score = _distance_to_match_score(distances[index] if index < len(distances) else None)
-            if score is None or score < 35.0:
-                continue
             job, company = jobs_by_id[jid]
-            if not candidate_job_gate(profile, job):
+            match_result = explain_candidate_job_match(profile, job, embedding_score=score)
+            if match_result.score < MIN_APPLY_MATCH_SCORE:
                 continue
-            ordered_jobs.append((job, company, score))
+            ordered_jobs.append((job, company, match_result.score, match_result.reasons))
 
         if not ordered_jobs:
             logger.info("recommended_empty_below_threshold", user_id=str(user_id))
@@ -308,7 +355,7 @@ class JobService:
         *,
         page: int = 1,
         limit: int = 20,
-    ) -> tuple[list[tuple[Job, str, bool]], int]:
+    ) -> tuple[list[tuple[Job, str, bool, float | None, list[str]]], int]:
         stmt = (
             select(Job, Profile.company, literal(True).label("is_booked"))
             .join(Bookmark, Bookmark.job_id == Job.id)
@@ -321,7 +368,16 @@ class JobService:
         total = (await db.execute(count_stmt)).scalar_one()
 
         result = await db.execute(stmt.offset((page - 1) * limit).limit(limit))
-        return list(result.all()), total
+        rows = list(result.all())
+        profile = await self._get_job_seeker_profile(db, user_id)
+        if not profile:
+            return [(job, company or "", bool(is_booked), None, []) for job, company, is_booked in rows], total
+
+        scored_rows: list[tuple[Job, str, bool, float | None, list[str]]] = []
+        for job, company, is_booked in rows:
+            match_result = await score_candidate_job_match(profile, job)
+            scored_rows.append((job, company or "", bool(is_booked), match_result.score, match_result.reasons))
+        return scored_rows, total
 
 
 job_service = JobService()

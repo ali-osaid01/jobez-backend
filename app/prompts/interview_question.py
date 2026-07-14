@@ -26,6 +26,7 @@ def build_question_prompt(candidate_profile: dict, job: dict, difficulty: str) -
         if w.get("title") or w.get("company")
     ) or "not specified"
     requirements = ", ".join(job.get("requirements") or []) or "not specified"
+    responsibilities = ", ".join(job.get("responsibilities") or []) or "not specified"
     difficulty_desc = _DIFFICULTY_DESCRIPTIONS.get(difficulty, _DIFFICULTY_DESCRIPTIONS["medium"])
 
     certifications = ", ".join(candidate_profile.get("certifications") or []) or "not specified"
@@ -51,15 +52,19 @@ CANDIDATE PROFILE:
 
 JOB THEY APPLIED FOR:
 - Title: {job.get("title") or "not specified"}
+- Seniority: {job.get("experienceLevel") or "not specified"}
 - Description: {job.get("description") or "not specified"}
 - Requirements: {requirements}
+- Responsibilities: {responsibilities}
 
 INSTRUCTIONS:
-- Generate exactly 5 questions in this mix: 3 technical, 1 behavioral, 1 situational
-- Technical questions must directly relate to their listed skills AND the job requirements
+- Generate exactly 5 questions in this mix: 3 role-specific/domain questions, 1 behavioral, 1 situational
+- Role-specific/domain questions must directly relate to the job title, requirements, responsibilities, and overlapping candidate skills
 - Behavioral questions should reference realistic scenarios from their work history
 - Situational questions should be grounded in the specific job context
 - All questions must match the {difficulty.upper()} difficulty level described above
+- Do NOT ask about tools, frameworks, programming concepts, or technologies unless they appear in the job description, requirements, responsibilities, or candidate profile
+- For non-software jobs, ask domain-specific questions for that job, not software engineering questions
 - Do NOT ask generic or beginner questions
 - Questions should feel specific to this candidate, not copy-paste generic interview prep
 

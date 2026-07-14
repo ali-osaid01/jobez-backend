@@ -4,14 +4,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.interview_agent import interview_agent
-from app.core.enums import ApplicationStatus, InterviewStatus
+from app.core.enums import ApplicationStatus, InterviewStatus, InterviewType
 from app.core.exceptions import ForbiddenException, NotFoundException
 from app.models.application import Application
 from app.models.interview import Interview
 from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
-from app.schemas.interview import InterviewCreate, InterviewResponsesRequest, InterviewUpdate
+from app.schemas.interview import HumanInterviewCompleteRequest, InterviewCreate, InterviewResponsesRequest, InterviewUpdate
 
 # Maps profile.experience → the difficulty level of questions to generate
 _EXPERIENCE_TO_DIFFICULTY: dict[str | None, str] = {
@@ -196,6 +196,8 @@ class InterviewService:
             "title": job.title if job else interview.job_title,
             "description": job.description if job else "",
             "requirements": job.requirements if job else [],
+            "responsibilities": job.responsibilities if job else [],
+            "experienceLevel": job.experience_level.value if job and hasattr(job.experience_level, "value") else job.experience_level if job else None,
         }
 
         interview.questions = await interview_agent.generate_questions(
@@ -228,6 +230,82 @@ class InterviewService:
 
         await db.flush()
 
+    async def security_fail(self, db: AsyncSession, interview_id: uuid.UUID, user_id: uuid.UUID, reason: str) -> None:
+        interview = await self.get_by_id(db, interview_id)
+        if interview.applicant_id != user_id:
+            raise ForbiddenException("You can only fail your own interview")
+        if InterviewType(interview.type) != InterviewType.AI:
+            raise ForbiddenException("Security failure only applies to AI interviews")
+
+        summary = reason or "Interview failed due to security violation."
+        interview.status = InterviewStatus.COMPLETED
+        interview.ai_score = 0
+        interview.ai_summary = summary
+        interview.evaluation = {
+            "overallScore": 0,
+            "technicalScore": 0,
+            "communicationScore": 0,
+            "problemSolvingScore": 0,
+            "cultureFitScore": 0,
+            "strengths": [],
+            "improvements": ["The interview was closed because the candidate left the secure interview screen."],
+            "summary": summary,
+            "securityFailed": True,
+        }
+        await db.flush()
+
+    async def complete_human_interview(
+        self,
+        db: AsyncSession,
+        interview_id: uuid.UUID,
+        employer_id: uuid.UUID,
+        data: HumanInterviewCompleteRequest,
+    ) -> Interview:
+        interview = await self.get_by_id(db, interview_id)
+        stmt = select(Job).where(Job.id == interview.job_id, Job.employer_id == employer_id)
+        result = await db.execute(stmt)
+        if not result.scalar_one_or_none():
+            raise ForbiddenException("You can only complete your own interviews")
+        if InterviewType(interview.type) != InterviewType.HUMAN:
+            raise ForbiddenException("Only human interviews can be completed manually")
+
+        interview.status = InterviewStatus.COMPLETED
+        interview.ai_score = float(data.score)
+        interview.ai_summary = data.comments
+        interview.evaluation = {
+            "overallScore": float(data.score),
+            "technicalScore": float(data.score),
+            "communicationScore": float(data.score),
+            "problemSolvingScore": float(data.score),
+            "cultureFitScore": float(data.score),
+            "strengths": [],
+            "improvements": [],
+            "summary": data.comments,
+            "humanComments": data.comments,
+            "evaluationSource": "human",
+        }
+        await db.flush()
+        await db.refresh(interview)
+        return interview
+
+    def _transcript_items(self, interview: Interview) -> list[dict]:
+        questions_by_id = {str(q.get("id")): q for q in (interview.questions or [])}
+        items: list[dict] = []
+        for response in interview.responses or []:
+            question = questions_by_id.get(str(response.get("questionId"))) or {}
+            items.append(
+                {
+                    "questionId": str(response.get("questionId", "")),
+                    "question": question.get("question", "Question text unavailable"),
+                    "type": question.get("type"),
+                    "category": question.get("category"),
+                    "response": response.get("response", ""),
+                    "duration": int(response.get("duration") or 0),
+                    "timestamp": response.get("timestamp", ""),
+                }
+            )
+        return items
+
     async def get_results(self, db: AsyncSession, interview_id: uuid.UUID, user_id: uuid.UUID) -> dict:
         interview = await self.get_by_id(db, interview_id)
 
@@ -252,7 +330,7 @@ class InterviewService:
             "strengths": evaluation.get("strengths", []),
             "improvements": evaluation.get("improvements", []),
             "summary": evaluation.get("summary", ""),
-            "responses": interview.responses or [],
+            "responses": self._transcript_items(interview),
         }
 
 

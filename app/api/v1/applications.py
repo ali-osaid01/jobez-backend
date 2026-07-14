@@ -46,6 +46,12 @@ def _app_response(app, latest_interview: Interview | None = None) -> Application
             latest_interview.status.value if latest_interview and hasattr(latest_interview.status, "value")
             else latest_interview.status if latest_interview else None
         ),
+        latestInterviewType=(
+            latest_interview.type.value if latest_interview and hasattr(latest_interview.type, "value")
+            else latest_interview.type if latest_interview else None
+        ),
+        latestInterviewScore=latest_interview.ai_score if latest_interview else None,
+        latestInterviewSummary=latest_interview.ai_summary if latest_interview else None,
         createdAt=app.created_at.isoformat(),
         updatedAt=app.updated_at.isoformat(),
     )

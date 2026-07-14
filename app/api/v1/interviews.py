@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
@@ -10,16 +11,19 @@ from app.core.enums import UserRole
 from app.core.exceptions import ForbiddenException, NotFoundException
 from app.db.session import get_db
 from app.models.user import User
+from app.models.application import Application
 from app.schemas.common import SuccessResponse
 from app.schemas.interview import (
     AIInterviewResult,
     AIInterviewStartResponse,
+    HumanInterviewCompleteRequest,
     InterviewAnswerTranscriptResponse,
     InterviewCreate,
     InterviewCounts,
     InterviewListResponse,
     InterviewResponse,
     InterviewResponsesRequest,
+    InterviewSecurityFailRequest,
     InterviewUpdate,
 )
 from app.services.openai_voice_service import openai_voice_service
@@ -28,7 +32,9 @@ from app.services.interview_service import interview_service
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
 
 
-def _interview_response(interview) -> InterviewResponse:
+def _interview_response(interview, application: Application | None = None) -> InterviewResponse:
+    summary = interview.ai_summary
+    score = interview.ai_score
     return InterviewResponse(
         id=str(interview.id),
         jobId=str(interview.job_id),
@@ -37,6 +43,11 @@ def _interview_response(interview) -> InterviewResponse:
         company=interview.company,
         applicantId=str(interview.applicant_id),
         applicantName=interview.applicant_name,
+        applicantEmail=application.applicant_email if application else None,
+        applicationStatus=(
+            application.status.value if application and hasattr(application.status, "value")
+            else application.status if application else None
+        ),
         scheduledDate=interview.scheduled_date,
         scheduledTime=interview.scheduled_time,
         duration=interview.duration,
@@ -46,9 +57,19 @@ def _interview_response(interview) -> InterviewResponse:
         notes=interview.notes,
         aiScore=interview.ai_score,
         aiSummary=interview.ai_summary,
+        score=score,
+        summary=summary,
         createdAt=interview.created_at.isoformat(),
         updatedAt=interview.updated_at.isoformat(),
     )
+
+
+async def _applications_by_id(db: AsyncSession, interviews: list) -> dict:
+    application_ids = [interview.application_id for interview in interviews]
+    if not application_ids:
+        return {}
+    result = await db.execute(select(Application).where(Application.id.in_(application_ids)))
+    return {application.id: application for application in result.scalars().all()}
 
 
 @router.get("", response_model=InterviewListResponse)
@@ -63,9 +84,10 @@ async def list_interviews(
     interviews, total = await interview_service.list_interviews(
         db, user, page=page, limit=limit, status=status, interview_type=type
     )
+    applications = await _applications_by_id(db, interviews)
     raw_counts = await interview_service.get_status_counts(db, user, interview_type=type)
     return InterviewListResponse(
-        data=[_interview_response(i) for i in interviews],
+        data=[_interview_response(i, applications.get(i.application_id)) for i in interviews],
         total=total,
         page=page,
         limit=limit,
@@ -81,7 +103,8 @@ async def get_interview(
     db: AsyncSession = Depends(get_db),
 ):
     interview = await interview_service.get_by_id(db, interview_id)
-    return SuccessResponse(data=_interview_response(interview))
+    applications = await _applications_by_id(db, [interview])
+    return SuccessResponse(data=_interview_response(interview, applications.get(interview.application_id)))
 
 
 @router.post("", status_code=201, response_model=SuccessResponse[InterviewResponse])
@@ -91,7 +114,8 @@ async def create_interview(
     db: AsyncSession = Depends(get_db),
 ):
     interview = await interview_service.create(db, employer, payload)
-    return SuccessResponse(data=_interview_response(interview))
+    applications = await _applications_by_id(db, [interview])
+    return SuccessResponse(data=_interview_response(interview, applications.get(interview.application_id)))
 
 
 @router.patch("/{interview_id}", response_model=SuccessResponse[InterviewResponse])
@@ -102,7 +126,36 @@ async def update_interview(
     db: AsyncSession = Depends(get_db),
 ):
     interview = await interview_service.update(db, interview_id, employer.id, payload)
-    return SuccessResponse(data=_interview_response(interview))
+    applications = await _applications_by_id(db, [interview])
+    return SuccessResponse(data=_interview_response(interview, applications.get(interview.application_id)))
+
+
+@router.post("/{interview_id}/complete-human", response_model=SuccessResponse[InterviewResponse])
+async def complete_human_interview(
+    interview_id: uuid.UUID,
+    payload: HumanInterviewCompleteRequest,
+    employer: User = Depends(require_role(UserRole.EMPLOYER)),
+    db: AsyncSession = Depends(get_db),
+):
+    interview = await interview_service.complete_human_interview(db, interview_id, employer.id, payload)
+    applications = await _applications_by_id(db, [interview])
+    return SuccessResponse(data=_interview_response(interview, applications.get(interview.application_id)))
+
+
+@router.post("/{interview_id}/security-fail")
+async def fail_interview_security(
+    interview_id: uuid.UUID,
+    payload: InterviewSecurityFailRequest,
+    user: User = Depends(require_role(UserRole.JOB_SEEKER)),
+    db: AsyncSession = Depends(get_db),
+):
+    await interview_service.security_fail(
+        db,
+        interview_id,
+        user.id,
+        payload.reason or "Interview failed due to security violation.",
+    )
+    return {"message": "Interview failed due to security violation"}
 
 
 @router.post("/{interview_id}/start", response_model=SuccessResponse[AIInterviewStartResponse])

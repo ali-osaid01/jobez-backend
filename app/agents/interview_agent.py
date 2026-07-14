@@ -55,11 +55,11 @@ class InterviewAgent:
     def _fallback_questions(self, job_title: str, difficulty: str) -> list[dict]:
         """Safe fallback if OpenAI is unavailable or returns unparseable output."""
         return [
-            {"id": "q1", "question": f"Walk me through your most relevant technical project for a {job_title} role.", "type": "technical", "category": "Experience", "expectedDuration": 150},
-            {"id": "q2", "question": "How would you approach the main technical challenge in this job, and why?", "type": "technical", "category": "System Design", "expectedDuration": 150},
-            {"id": "q3", "question": "Describe a bug, bottleneck, or failure you solved in production and the trade-offs you made.", "type": "technical", "category": "Problem Solving", "expectedDuration": 150},
+            {"id": "q1", "question": f"Walk me through your most relevant experience for a {job_title} role.", "type": "technical", "category": "Experience", "expectedDuration": 150},
+            {"id": "q2", "question": f"What are the most important success metrics for a {job_title}, and how would you improve them?", "type": "technical", "category": "Role Knowledge", "expectedDuration": 150},
+            {"id": "q3", "question": f"Describe a difficult problem you solved that is relevant to the responsibilities of a {job_title}.", "type": "technical", "category": "Problem Solving", "expectedDuration": 150},
             {"id": "q4", "question": "Tell me about a time you had to influence a team decision or push back on a requirement.", "type": "behavioral", "category": "Communication", "expectedDuration": 120},
-            {"id": "q5", "question": f"If you joined this {job_title} team and found the codebase or process messy, what would you do in your first week?", "type": "situational", "category": "Prioritization", "expectedDuration": 150},
+            {"id": "q5", "question": f"If you joined as a {job_title} and found the current process underperforming, what would you do in your first week?", "type": "situational", "category": "Prioritization", "expectedDuration": 150},
         ]
 
     async def evaluate_responses(self, job_title: str, questions: list[dict], responses: list[dict]) -> dict:

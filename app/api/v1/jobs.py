@@ -15,7 +15,13 @@ from app.services.job_service import job_service
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 
-def _job_response(job, company: str, is_booked: bool = False, match_score: float | None = None) -> JobResponse:
+def _job_response(
+    job,
+    company: str,
+    is_booked: bool = False,
+    match_score: float | None = None,
+    match_reasons: list[str] | None = None,
+) -> JobResponse:
     return JobResponse(
         id=str(job.id),
         title=job.title,
@@ -33,6 +39,7 @@ def _job_response(job, company: str, is_booked: bool = False, match_score: float
         applicationDeadline=job.application_deadline,
         employerId=str(job.employer_id),
         matchScore=match_score,
+        matchReasons=match_reasons or [],
         applicantsCount=job.applicants_count,
         status=job.status.value if hasattr(job.status, "value") else job.status,
         isBooked=is_booked,
@@ -71,7 +78,10 @@ async def list_jobs(
         user_id=user.id,
     )
     return PaginatedResponse(
-        data=[_job_response(job, company or "", bool(is_booked)) for job, company, is_booked in rows],
+        data=[
+            _job_response(job, company or "", bool(is_booked), score, reasons)
+            for job, company, is_booked, score, reasons in rows
+        ],
         total=total,
         page=page,
         limit=limit,
@@ -88,7 +98,7 @@ async def get_recommended_jobs(
 ):
     rows, total = await job_service.get_recommended(db, user.id, page=page, limit=limit)
     return PaginatedResponse(
-        data=[_job_response(job, company or "", False, score) for job, company, score in rows],
+        data=[_job_response(job, company or "", False, score, reasons) for job, company, score, reasons in rows],
         total=total,
         page=page,
         limit=limit,
@@ -105,7 +115,10 @@ async def get_saved_jobs(
 ):
     rows, total = await job_service.get_saved(db, user.id, page=page, limit=limit)
     return PaginatedResponse(
-        data=[_job_response(job, company or "", bool(is_booked)) for job, company, is_booked in rows],
+        data=[
+            _job_response(job, company or "", bool(is_booked), score, reasons)
+            for job, company, is_booked, score, reasons in rows
+        ],
         total=total,
         page=page,
         limit=limit,
@@ -119,8 +132,8 @@ async def get_job(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    job, company, is_booked = await job_service.get_by_id(db, job_id, user_id=user.id)
-    return SuccessResponse(data=_job_response(job, company or "", bool(is_booked)))
+    job, company, is_booked, score, reasons = await job_service.get_by_id(db, job_id, user_id=user.id)
+    return SuccessResponse(data=_job_response(job, company or "", bool(is_booked), score, reasons))
 
 
 @router.post("", status_code=201, response_model=SuccessResponse[JobResponse])

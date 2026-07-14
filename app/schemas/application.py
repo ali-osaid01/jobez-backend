@@ -34,6 +34,9 @@ class ApplicationResponse(BaseModel):
     rejectionReason: str | None = None
     latestInterviewId: str | None = None
     latestInterviewStatus: str | None = None
+    latestInterviewType: str | None = None
+    latestInterviewScore: float | None = None
+    latestInterviewSummary: str | None = None
     createdAt: str
     updatedAt: str
 

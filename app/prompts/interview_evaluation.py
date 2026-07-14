@@ -1,7 +1,13 @@
 def build_evaluation_prompt(job_title: str, questions: list[dict], responses: list[dict]) -> str:
     q_and_a = ""
-    for q, r in zip(questions, responses):
-        q_and_a += f"\nQ: {q['question']}\nA: {r['response']}\nDuration: {r['duration']}s\n"
+    questions_by_id = {str(question.get("id")): question for question in questions}
+    for response in responses:
+        question = questions_by_id.get(str(response.get("questionId"))) or {}
+        q_and_a += (
+            f"\nQ: {question.get('question', 'Question text unavailable')}"
+            f"\nA: {response.get('response', '')}"
+            f"\nDuration: {response.get('duration', 0)}s\n"
+        )
 
     return f"""You are an AI interview evaluator. Evaluate the candidate's responses for the {job_title} position.
 

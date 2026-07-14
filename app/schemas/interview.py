@@ -32,6 +32,8 @@ class InterviewResponse(BaseModel):
     company: str
     applicantId: str
     applicantName: str | None = None
+    applicantEmail: str | None = None
+    applicationStatus: str | None = None
     scheduledDate: str
     scheduledTime: str
     duration: int
@@ -41,6 +43,8 @@ class InterviewResponse(BaseModel):
     notes: str | None = None
     aiScore: float | None = None
     aiSummary: str | None = None
+    score: float | None = None
+    summary: str | None = None
     createdAt: str
     updatedAt: str
 
@@ -80,6 +84,12 @@ class InterviewResponseSubmission(BaseModel):
     timestamp: str
 
 
+class InterviewTranscriptItem(InterviewResponseSubmission):
+    question: str
+    type: str | None = None
+    category: str | None = None
+
+
 class InterviewAnswerTranscriptResponse(BaseModel):
     interviewId: str
     questionId: str
@@ -102,4 +112,13 @@ class AIInterviewResult(BaseModel):
     strengths: list[str]
     improvements: list[str]
     summary: str
-    responses: list[InterviewResponseSubmission]
+    responses: list[InterviewTranscriptItem]
+
+
+class HumanInterviewCompleteRequest(BaseModel):
+    score: float = Field(ge=0, le=100)
+    comments: str = Field(min_length=1)
+
+
+class InterviewSecurityFailRequest(BaseModel):
+    reason: str | None = None

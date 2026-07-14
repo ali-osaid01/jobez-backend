@@ -51,6 +51,7 @@ class JobResponse(BaseModel):
     applicationDeadline: date | None = None
     employerId: str
     matchScore: float | None = None
+    matchReasons: list[str] = []
     applicantsCount: int
     status: str
     isBooked: bool = False
