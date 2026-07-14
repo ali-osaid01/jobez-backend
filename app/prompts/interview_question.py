@@ -10,10 +10,10 @@ _DIFFICULTY_DESCRIPTIONS = {
         "decisions and handle follow-up scenarios."
     ),
     "extra hard": (
-        "EXTRA HARD difficulty — questions should be at senior/expert level. Expect system design "
-        "trade-offs, distributed systems concerns, subtle bugs, scalability bottlenecks, and "
-        "questions that expose the boundary between good and exceptional engineers. Do not ask "
-        "anything a mid-level engineer could answer confidently."
+        "EXTRA HARD difficulty — questions should be at senior/expert level for the target role. "
+        "Expect strategic trade-offs, edge cases, high-stakes decision making, and questions that "
+        "expose the boundary between good and exceptional practitioners in that domain. Do not ask "
+        "anything a mid-level candidate could answer confidently."
     ),
 }
 
@@ -36,7 +36,7 @@ def build_question_prompt(candidate_profile: dict, job: dict, difficulty: str) -
         if e.get("degree") or e.get("institution")
     ) or "not specified"
 
-    return f"""You are a senior technical interviewer conducting an AI interview. Generate exactly 5 interview questions.
+    return f"""You are a senior interviewer conducting an AI interview. Generate exactly 5 interview questions.
 
 DIFFICULTY LEVEL: {difficulty.upper()}
 {difficulty_desc}

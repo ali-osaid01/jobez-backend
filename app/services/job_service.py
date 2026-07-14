@@ -15,7 +15,6 @@ from app.models.user import User
 from app.schemas.job import JobCreate, JobUpdate
 from app.services.matching import (
     MIN_APPLY_MATCH_SCORE,
-    MatchResult,
     explain_candidate_job_match,
     score_candidate_job_match,
 )

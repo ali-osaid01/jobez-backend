@@ -20,6 +20,7 @@ from app.models.job import Job
 from app.models.profile import Profile
 from app.schemas.application import ApplicationCreate
 from app.services.application_service import INTERVIEW_MATCH_THRESHOLD, ApplicationService
+from app.services.matching import MIN_APPLY_MATCH_SCORE, MatchResult
 
 
 class FakeResult:
@@ -110,6 +111,10 @@ def _build_social_media_job() -> Job:
     return job
 
 
+def _match(score: float) -> MatchResult:
+    return MatchResult(score=score, reasons=[], role_overlap=[], skill_matches=[])
+
+
 @pytest.mark.asyncio
 async def test_create_auto_schedules_interview_for_high_match(monkeypatch):
     service = ApplicationService()
@@ -149,7 +154,7 @@ async def test_create_auto_schedules_interview_for_high_match(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr(service, "_score_application", AsyncMock(return_value=INTERVIEW_MATCH_THRESHOLD + 5))
+    monkeypatch.setattr(service, "_score_application", AsyncMock(return_value=_match(INTERVIEW_MATCH_THRESHOLD + 5)))
     monkeypatch.setattr(service, "_create_auto_interview", AsyncMock(return_value=interview))
 
     application, created_interview = await service.create(
@@ -184,7 +189,7 @@ async def test_create_keeps_application_pending_for_low_match(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr(service, "_score_application", AsyncMock(return_value=INTERVIEW_MATCH_THRESHOLD - 10))
+    monkeypatch.setattr(service, "_score_application", AsyncMock(return_value=_match(INTERVIEW_MATCH_THRESHOLD - 10)))
     create_auto_interview = AsyncMock()
     monkeypatch.setattr(service, "_create_auto_interview", create_auto_interview)
 
@@ -217,9 +222,10 @@ async def test_create_blocks_low_relevance_application_before_saving(monkeypatch
         [
             FakeResult(row=(job, "Acme")),
             FakeResult(scalar=profile),
+            FakeResult(scalar=None),
         ]
     )
-    score_application = AsyncMock(return_value=90)
+    score_application = AsyncMock(return_value=_match(MIN_APPLY_MATCH_SCORE - 1))
     monkeypatch.setattr(service, "_score_application", score_application)
 
     with pytest.raises(ValidationError):
@@ -228,4 +234,4 @@ async def test_create_blocks_low_relevance_application_before_saving(monkeypatch
     assert fake_db.added == []
     assert fake_db.flushed is False
     assert job.applicants_count == 0
-    score_application.assert_not_awaited()
+    score_application.assert_awaited_once()
