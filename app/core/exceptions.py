@@ -30,7 +30,11 @@ class ForbiddenException(AppException):
 
 class NotFoundException(AppException):
     def __init__(self, resource: str = "Resource"):
-        super().__init__(404, "NOT_FOUND", f"{resource} not found")
+        if " " in resource:
+            message = resource
+        else:
+            message = f"{resource} not found"
+        super().__init__(404, "NOT_FOUND", message)
 
 
 class ConflictException(AppException):

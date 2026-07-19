@@ -18,6 +18,7 @@ from app.services.matching import (
     MatchResult,
     score_candidate_job_match,
 )
+from app.services.notification_service import notification_service
 
 VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.PENDING: {ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED},
@@ -202,11 +203,12 @@ class ApplicationService:
     async def update_status(
         self, db: AsyncSession, app_id: uuid.UUID, employer_id: uuid.UUID, data: ApplicationStatusUpdate
     ) -> Application:
-        stmt = select(Application).join(Job).where(Application.id == app_id, Job.employer_id == employer_id)
+        stmt = select(Application, Job).join(Job).where(Application.id == app_id, Job.employer_id == employer_id)
         result = await db.execute(stmt)
-        application = result.scalar_one_or_none()
-        if not application:
+        row = result.one_or_none()
+        if not row:
             raise NotFoundException("Application")
+        application, job = row
 
         current = ApplicationStatus(application.status)
         allowed = VALID_TRANSITIONS.get(current, set())
@@ -214,14 +216,97 @@ class ApplicationService:
             raise InvalidTransitionException(
                 f"Cannot transition from '{current.value}' to '{data.status.value}'"
             )
+        if data.status == ApplicationStatus.REJECTED and not (data.rejectionReason or "").strip():
+            raise ValidationError("Rejection reason is required")
 
         application.status = data.status
-        if data.rejectionReason and data.status == ApplicationStatus.REJECTED:
-            application.rejection_reason = data.rejectionReason
+        if data.status == ApplicationStatus.REJECTED:
+            application.rejection_reason = data.rejectionReason.strip()
+        elif data.status == ApplicationStatus.HIRED:
+            application.rejection_reason = None
+
+        await self._create_status_notifications(
+            db,
+            application=application,
+            job=job,
+            employer_id=employer_id,
+            status=data.status,
+        )
 
         await db.flush()
         await db.refresh(application)
         return application
+
+    async def _create_status_notifications(
+        self,
+        db: AsyncSession,
+        *,
+        application: Application,
+        job: Job,
+        employer_id: uuid.UUID,
+        status: ApplicationStatus,
+    ) -> None:
+        notification_data = {
+            "applicationId": str(application.id),
+            "jobId": str(application.job_id),
+            "jobTitle": application.job_title,
+            "applicantId": str(application.applicant_id),
+            "status": status.value,
+        }
+
+        if status == ApplicationStatus.REJECTED:
+            reason = application.rejection_reason or "No reason provided."
+            await notification_service.create(
+                db,
+                recipient_id=application.applicant_id,
+                title="Application rejected",
+                message=f"{application.company} rejected your application for {application.job_title}. Reason: {reason}",
+                type="rejection",
+                data=notification_data,
+            )
+            await notification_service.create(
+                db,
+                recipient_id=employer_id,
+                title="Candidate rejected",
+                message=f"You rejected {application.applicant_name} for {application.job_title}. Reason: {reason}",
+                type="rejection",
+                data=notification_data,
+            )
+        elif status == ApplicationStatus.HIRED:
+            await notification_service.create(
+                db,
+                recipient_id=application.applicant_id,
+                title="Application marked hired",
+                message=f"{application.company} marked you as hired for {application.job_title}.",
+                type="hired",
+                data=notification_data,
+            )
+            await notification_service.create(
+                db,
+                recipient_id=employer_id,
+                title="Candidate marked hired",
+                message=f"You marked {application.applicant_name} as hired for {application.job_title}.",
+                type="hired",
+                data=notification_data,
+            )
+        elif status == ApplicationStatus.SHORTLISTED:
+            await notification_service.create(
+                db,
+                recipient_id=application.applicant_id,
+                title="Application shortlisted",
+                message=f"{application.company} shortlisted your application for {application.job_title}.",
+                type="application",
+                data=notification_data,
+            )
+        elif status == ApplicationStatus.INTERVIEW_SCHEDULED:
+            await notification_service.create(
+                db,
+                recipient_id=application.applicant_id,
+                title="Interview scheduled",
+                message=f"{application.company} scheduled an interview for {application.job_title}.",
+                type="interview",
+                data=notification_data,
+            )
 
     async def get_resume_url(self, db: AsyncSession, app_id: uuid.UUID, employer_id: uuid.UUID) -> str:
         stmt = select(Application).join(Job).where(Application.id == app_id, Job.employer_id == employer_id)

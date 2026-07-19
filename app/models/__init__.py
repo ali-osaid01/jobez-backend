@@ -5,3 +5,4 @@ from app.models.job import Job  # noqa: F401
 from app.models.bookmark import Bookmark  # noqa: F401
 from app.models.application import Application  # noqa: F401
 from app.models.interview import Interview  # noqa: F401
+from app.models.notification import Notification  # noqa: F401

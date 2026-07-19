@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import applications, auth, dashboard, health, interviews, jobs, profile
+from app.api.v1 import applications, auth, dashboard, health, interviews, jobs, notifications, profile
 
 v1_router = APIRouter()
 
@@ -11,3 +11,4 @@ v1_router.include_router(jobs.router)
 v1_router.include_router(applications.router)
 v1_router.include_router(interviews.router)
 v1_router.include_router(dashboard.router)
+v1_router.include_router(notifications.router)

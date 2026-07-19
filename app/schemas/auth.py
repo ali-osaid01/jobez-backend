@@ -25,6 +25,16 @@ class RefreshRequest(BaseModel):
     refreshToken: str
 
 
+class ChangePasswordRequest(BaseModel):
+    currentPassword: str
+    newPassword: str = Field(min_length=6)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    newPassword: str = Field(min_length=6)
+
+
 class AuthUserResponse(BaseModel):
     id: str
     email: str

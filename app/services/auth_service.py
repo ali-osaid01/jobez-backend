@@ -17,7 +17,7 @@ from app.services.token_service import token_service
 class AuthService:
     async def signup(self, db: AsyncSession, data: SignupRequest) -> tuple[User, str, str]:
         # Check for existing user
-        stmt = select(User).where(User.email == data.email)
+        stmt = select(User).where(User.email == data.email.lower())
         result = await db.execute(stmt)
         if result.scalar_one_or_none():
             raise ConflictException("A user with this email already exists")
@@ -25,7 +25,7 @@ class AuthService:
         # Create user
         user = User(
             id=uuid.uuid4(),
-            email=data.email,
+            email=data.email.lower(),
             name=data.name,
             phone=data.phone,
             hashed_password=hash_password(data.password),
@@ -40,7 +40,7 @@ class AuthService:
             id=uuid.uuid4(),
             user_id=user.id,
             name=data.name,
-            email=data.email,
+            email=data.email.lower(),
             phone=data.phone,
             role=data.role.value,
         )
@@ -56,14 +56,14 @@ class AuthService:
         return user, access_token, refresh_token
 
     async def login(self, db: AsyncSession, email: str, password: str) -> tuple[User, str, str]:
-        stmt = select(User).where(User.email == email)
+        stmt = select(User).where(User.email == email.lower())
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
 
         if not user:
-            raise NotFoundException("User")
+            raise NotFoundException("No account exists with this email address")
         if not verify_password(password, user.hashed_password):
-            raise UnauthorizedException("Invalid credentials")
+            raise UnauthorizedException("Password is incorrect")
         if not user.is_active:
             raise UnauthorizedException("Account is deactivated")
 
@@ -72,6 +72,32 @@ class AuthService:
 
         await db.flush()
         return user, access_token, refresh_token
+
+    async def change_password(
+        self,
+        db: AsyncSession,
+        user: User,
+        *,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        if not verify_password(current_password, user.hashed_password):
+            raise UnauthorizedException("Current password is incorrect")
+        user.hashed_password = hash_password(new_password)
+        user.refresh_token_hash = None
+        await db.flush()
+
+    async def reset_password(self, db: AsyncSession, *, email: str, new_password: str) -> None:
+        stmt = select(User).where(User.email == email.lower())
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            raise NotFoundException("No account exists with this email address")
+        if not user.is_active:
+            raise UnauthorizedException("Account is deactivated")
+        user.hashed_password = hash_password(new_password)
+        user.refresh_token_hash = None
+        await db.flush()
 
     async def google_login(self, db: AsyncSession, data: GoogleLoginRequest) -> tuple[User, str, str]:
         google_profile = await self._verify_google_credential(data.credential)

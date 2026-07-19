@@ -12,6 +12,7 @@ from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.interview import HumanInterviewCompleteRequest, InterviewCreate, InterviewResponsesRequest, InterviewUpdate
+from app.services.notification_service import notification_service
 
 # Maps profile.experience → the difficulty level of questions to generate
 _EXPERIENCE_TO_DIFFICULTY: dict[str | None, str] = {
@@ -67,6 +68,35 @@ class InterviewService:
 
         # Update application status
         application.status = ApplicationStatus.INTERVIEW_SCHEDULED
+        await notification_service.create(
+            db,
+            recipient_id=application.applicant_id,
+            title="Interview scheduled",
+            message=f"{company or 'The employer'} scheduled a {data.type.value} interview for {job.title}.",
+            type="interview",
+            data={
+                "applicationId": str(application.id),
+                "interviewId": str(interview.id),
+                "jobId": str(job.id),
+                "jobTitle": job.title,
+                "status": ApplicationStatus.INTERVIEW_SCHEDULED.value,
+            },
+        )
+        await notification_service.create(
+            db,
+            recipient_id=employer.id,
+            title="Interview scheduled",
+            message=f"You scheduled a {data.type.value} interview with {application.applicant_name} for {job.title}.",
+            type="interview",
+            data={
+                "applicationId": str(application.id),
+                "interviewId": str(interview.id),
+                "jobId": str(job.id),
+                "jobTitle": job.title,
+                "applicantId": str(application.applicant_id),
+                "status": ApplicationStatus.INTERVIEW_SCHEDULED.value,
+            },
+        )
 
         await db.flush()
         return interview
@@ -227,6 +257,21 @@ class InterviewService:
         interview.ai_score = float(evaluation.get("overallScore", 0))
         interview.ai_summary = evaluation.get("summary", "")
         interview.evaluation = evaluation
+        job = (await db.execute(select(Job).where(Job.id == interview.job_id))).scalar_one_or_none()
+        if job:
+            await notification_service.create(
+                db,
+                recipient_id=job.employer_id,
+                title="AI interview completed",
+                message=f"{interview.applicant_name or 'A candidate'} completed the AI interview for {interview.job_title}.",
+                type="interview",
+                data={
+                    "interviewId": str(interview.id),
+                    "applicationId": str(interview.application_id),
+                    "jobId": str(interview.job_id),
+                    "score": interview.ai_score,
+                },
+            )
 
         await db.flush()
 
@@ -252,6 +297,21 @@ class InterviewService:
             "summary": summary,
             "securityFailed": True,
         }
+        job = (await db.execute(select(Job).where(Job.id == interview.job_id))).scalar_one_or_none()
+        if job:
+            await notification_service.create(
+                db,
+                recipient_id=job.employer_id,
+                title="AI interview closed",
+                message=f"{interview.applicant_name or 'A candidate'}'s AI interview for {interview.job_title} was closed for a security violation.",
+                type="interview",
+                data={
+                    "interviewId": str(interview.id),
+                    "applicationId": str(interview.application_id),
+                    "jobId": str(interview.job_id),
+                    "securityFailed": True,
+                },
+            )
         await db.flush()
 
     async def complete_human_interview(

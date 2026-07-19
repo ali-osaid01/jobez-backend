@@ -7,6 +7,8 @@ from app.models.user import User
 from app.schemas.auth import (
     AuthResponse,
     AuthUserResponse,
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
     GoogleLoginRequest,
     LoginRequest,
     RefreshRequest,
@@ -84,3 +86,24 @@ async def logout(
 ):
     await auth_service.logout(db, user)
     return {"message": "Logged out"}
+
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await auth_service.change_password(
+        db,
+        user,
+        current_password=payload.currentPassword,
+        new_password=payload.newPassword,
+    )
+    return {"message": "Password changed successfully"}
+
+
+@router.post("/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    await auth_service.reset_password(db, email=payload.email, new_password=payload.newPassword)
+    return {"message": "Password reset successfully"}

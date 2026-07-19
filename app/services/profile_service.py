@@ -79,6 +79,8 @@ class ProfileService:
         profile.resume_public_id = public_id
         await db.flush()
         await db.refresh(profile)
+        if profile.role == UserRole.JOB_SEEKER:
+            asyncio.create_task(_index_profile(str(user_id), build_profile_text(profile)))
         return profile
 
 

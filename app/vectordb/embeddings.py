@@ -14,7 +14,6 @@ logger = structlog.get_logger()
 
 
 async def embed_text(text: str) -> list[float]:
-    """Embed text via OpenAI. Returns [] if OpenAI is not configured or unavailable."""
     settings = get_settings()
     if not settings.OPENAI_API_KEY:
         logger.warning("embed_text_skipped", reason="OPENAI_API_KEY not set")
