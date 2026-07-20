@@ -101,7 +101,7 @@ class AuthService:
 
     async def google_login(self, db: AsyncSession, data: GoogleLoginRequest) -> tuple[User, str, str]:
         google_profile = await self._verify_google_credential(data.credential)
-        email = google_profile["email"]
+        email = google_profile["email"].lower()
         name = google_profile.get("name") or email.split("@", 1)[0]
         role = data.role or UserRole.JOB_SEEKER
 

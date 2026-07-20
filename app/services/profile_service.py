@@ -60,6 +60,11 @@ class ProfileService:
             if hasattr(profile, db_field):
                 setattr(profile, db_field, value)
 
+        if "name" in update_data and update_data["name"] is not None:
+            user.name = update_data["name"]
+        if "phone" in update_data and update_data["phone"] is not None:
+            user.phone = update_data["phone"]
+
         # Update user's onboarding_complete flag
         if data.onboardingComplete is not None:
             user.onboarding_complete = data.onboardingComplete
